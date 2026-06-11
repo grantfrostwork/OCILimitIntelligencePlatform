@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: lip
+      POSTGRES_USER: lip
+      POSTGRES_PASSWORD: lip-local
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://lip:lip-local@postgres:5432/lip
+      OCI_AUTH_MODE: ${OCI_AUTH_MODE:-instance_principal}
+      OCI_TENANCY_OCID: ${OCI_TENANCY_OCID:-ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq}
+      OCI_DEFAULT_REGION: ${OCI_DEFAULT_REGION:-us-ashburn-1}
+      LIP_ENABLE_NOTIFICATIONS: ${LIP_ENABLE_NOTIFICATIONS:-false}
+      LIP_NOTIFICATION_EMAILS: ${LIP_NOTIFICATION_EMAILS:-["grant.frost@oracle.com"]}
+      UPLOAD_DIR: /var/lib/oci-lip/uploads
+    volumes:
+      - uploads:/var/lib/oci-lip/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://lip:lip-local@postgres:5432/lip
+      OCI_AUTH_MODE: ${OCI_AUTH_MODE:-instance_principal}
+      OCI_TENANCY_OCID: ${OCI_TENANCY_OCID:-ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq}
+      OCI_DEFAULT_REGION: ${OCI_DEFAULT_REGION:-us-ashburn-1}
+      OCI_SCAN_ALL_REGIONS: ${OCI_SCAN_ALL_REGIONS:-false}
+      LIP_ENABLE_NOTIFICATIONS: ${LIP_ENABLE_NOTIFICATIONS:-false}
+      LIP_NOTIFICATION_EMAILS: ${LIP_NOTIFICATION_EMAILS:-["grant.frost@oracle.com"]}
+      UPLOAD_DIR: /var/lib/oci-lip/uploads
+    volumes:
+      - uploads:/var/lib/oci-lip/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+volumes:
+  postgres-data:
+  uploads:
