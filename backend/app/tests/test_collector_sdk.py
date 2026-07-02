@@ -103,9 +103,16 @@ def test_scan_parallelizes_sdk_calls_and_persists_results():
     scan = LimitsCollector(db, settings, sdk=sdk).run_scan("us-ashburn-1")
 
     assert scan.status == "succeeded"
-    assert scan.total_limits_discovered == 12
-    assert scan.limits_scanned == 12
+    assert scan.total_limits_discovered == 13
+    assert scan.limits_scanned == 13
     assert sdk.service_max_active > 1
     assert sdk.availability_max_active > 1
-    assert db.scalar(select(func.count(LimitItem.id))) == 12
-    assert db.scalar(select(LimitItem).where(LimitItem.limit_name == "dynamic-limit")) is None
+    assert db.scalar(select(func.count(LimitItem.id))) == 13
+
+    dynamic = db.scalar(select(LimitItem).where(LimitItem.limit_name == "dynamic-limit"))
+    assert dynamic is not None
+    assert dynamic.last_used == 25
+    assert dynamic.last_allowed_limit is None
+    assert dynamic.last_available is None
+    assert dynamic.last_percent_used is None
+    assert dynamic.last_collection_status == "ok"

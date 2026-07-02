@@ -106,9 +106,10 @@ The provisioned **OCI Limit Intelligence Platform - Operations** dashboard inclu
 - Region, service, scope, availability-domain, and collection-status filters.
 - Tenancy risk posture, peak utilization, near-capacity, at-capacity, scan-age, and exporter-health KPIs.
 - Highest-utilization limits, per-service risk concentration, historical utilization, and collection health.
+- Sorted OCI-reported Compute usage, including usage-only rows whose allowed value is `Dynamic`.
 - Scan duration, application alert counts, and Prometheus alert state.
 
-Prometheus retains up to 30 days or 5 GB of samples. Grafana and Prometheus both use persistent Docker
+Prometheus scrapes every five minutes and retains up to 30 days or 5 GB of samples. Grafana and Prometheus both use persistent Docker
 volumes. Anonymous access is read-only; administrator access requires `GRAFANA_ADMIN_PASSWORD` in
 the deployment `.env` file.
 

@@ -33,6 +33,24 @@ def test_prometheus_metrics_export_limit_and_scan_state():
         )
     )
     db.add(
+        LimitItem(
+            region="us-ashburn-1",
+            compartment_ocid="tenancy",
+            service_name="compute",
+            limit_name="dynamic-core-count",
+            resource_name="dynamic-core-count",
+            scope_type="REGION",
+            availability_domain=None,
+            subscription_id="",
+            last_allowed_limit=None,
+            last_used=17,
+            last_available=None,
+            last_percent_used=None,
+            last_collection_status="ok",
+            last_collected_at=now,
+        )
+    )
+    db.add(
         ScanRun(
             region="us-ashburn-1",
             status="succeeded",
@@ -62,6 +80,17 @@ def test_prometheus_metrics_export_limit_and_scan_state():
     assert 'limit_name="standard-core-count"' in output
     assert "oci_lip_limit_usage_percent" in output
     assert " 91.0" in output
+    dynamic_used = next(
+        line
+        for line in output.splitlines()
+        if line.startswith("oci_lip_limit_used{") and 'limit_name="dynamic-core-count"' in line
+    )
+    assert dynamic_used.endswith(" 17.0")
+    assert not any(
+        line.startswith(("oci_lip_limit_allowed{", "oci_lip_limit_usage_percent{"))
+        and 'limit_name="dynamic-core-count"' in line
+        for line in output.splitlines()
+    )
     assert 'oci_lip_limit_collection_status{' in output
     assert 'status="ok"' in output
     assert 'oci_lip_alerts_open{severity="warning"} 1.0' in output

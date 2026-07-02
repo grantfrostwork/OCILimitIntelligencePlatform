@@ -92,45 +92,6 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "Total persisted limit rows matching the dashboard filters.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {"fixedColor": "blue", "mode": "fixed"},
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 1},
-      "id": 2,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "13.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "sum(oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\",status=~\"$collection_status\"})",
-          "instant": true,
-          "legendFormat": "Limits",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "title": "Limits Monitored",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "description": "Selected limits at or above the configured warning threshold.",
       "fieldConfig": {
         "defaults": {
@@ -145,7 +106,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 1},
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 1},
       "id": 3,
       "options": {
         "colorMode": "background",
@@ -187,7 +148,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 5},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 1},
       "id": 4,
       "options": {
         "colorMode": "background",
@@ -233,7 +194,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 5},
+      "gridPos": {"h": 4, "w": 12, "x": 0, "y": 5},
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -272,7 +233,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 5},
+      "gridPos": {"h": 4, "w": 12, "x": 12, "y": 5},
       "id": 6,
       "options": {
         "colorMode": "background",
@@ -446,6 +407,53 @@
     {
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "id": 105,
+      "panels": [],
+      "title": "Compute Usage",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "OCI-reported Compute usage sorted by raw value. Dynamic allowed values remain excluded from capacity and percentage calculations; units vary by limit.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"align": "auto", "cellOptions": {"type": "auto"}},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Compute Limit"}, "properties": [{"id": "custom.width", "value": 260}]},
+          {"matcher": {"id": "byName", "options": "Current Usage"}, "properties": [{"id": "decimals", "value": 2}, {"id": "custom.align", "value": "right"}, {"id": "custom.width", "value": 120}]},
+          {"matcher": {"id": "byName", "options": "Region"}, "properties": [{"id": "custom.width", "value": 140}]},
+          {"matcher": {"id": "byName", "options": "Scope"}, "properties": [{"id": "custom.width", "value": 80}]},
+          {"matcher": {"id": "byName", "options": "Availability Domain"}, "properties": [{"id": "custom.width", "value": 240}]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 29},
+      "id": 16,
+      "options": {"cellHeight": "sm", "footer": {"countRows": true, "fields": "", "reducer": ["count"], "show": true}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "Current Usage"}]},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "topk(100, oci_lip_limit_used{service=\"compute\",region=~\"$region\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} > 0)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Compute Usage by Limit",
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true, "environment": true, "instance": true, "job": true, "service": true}, "indexByName": {"limit_name": 0, "Value": 1, "region": 2, "scope": 3, "availability_domain": 4}, "renameByName": {"availability_domain": "Availability Domain", "limit_name": "Compute Limit", "region": "Region", "scope": "Scope", "Value": "Current Usage"}}}
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 38},
       "id": 103,
       "panels": [],
       "title": "Risk Inventory",
@@ -460,7 +468,7 @@
           {"matcher": {"id": "byName", "options": "Usage %"}, "properties": [{"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}, {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}
         ]
       },
-      "gridPos": {"h": 9, "w": 14, "x": 0, "y": 29},
+      "gridPos": {"h": 9, "w": 14, "x": 0, "y": 39},
       "id": 11,
       "options": {"cellHeight": "sm", "footer": {"countRows": true, "fields": "", "reducer": ["count"], "show": true}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "Usage %"}]},
       "pluginVersion": "13.0.2",
@@ -488,7 +496,7 @@
         "defaults": {"color": {"fixedColor": "orange", "mode": "fixed"}, "custom": {"axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "fillOpacity": 80, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineWidth": 1, "scaleDistribution": {"type": "linear"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 0, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}, "unit": "short"},
         "overrides": []
       },
-      "gridPos": {"h": 9, "w": 10, "x": 14, "y": 29},
+      "gridPos": {"h": 9, "w": 10, "x": 14, "y": 39},
       "id": 12,
       "options": {"barRadius": 0, "barWidth": 0.75, "fullHighlight": false, "groupWidth": 0.7, "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "orientation": "horizontal", "showValue": "always", "stacking": "none", "tooltip": {"hideZeros": false, "mode": "single", "sort": "none"}, "xTickLabelRotation": 0, "xTickLabelSpacing": 0},
       "pluginVersion": "13.0.2",
@@ -507,7 +515,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 38},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48},
       "id": 104,
       "panels": [],
       "title": "Platform Operations",
@@ -520,7 +528,7 @@
         "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 18, "gradientMode": "opacity", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "auto", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "s"},
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 9, "x": 0, "y": 39},
+      "gridPos": {"h": 8, "w": 9, "x": 0, "y": 49},
       "id": 13,
       "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
       "pluginVersion": "13.0.2",
@@ -541,7 +549,7 @@
           {"matcher": {"id": "byName", "options": "info"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]}
         ]
       },
-      "gridPos": {"h": 8, "w": 7, "x": 9, "y": 39},
+      "gridPos": {"h": 8, "w": 7, "x": 9, "y": 49},
       "id": 14,
       "options": {"displayMode": "gradient", "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
       "pluginVersion": "13.0.2",
@@ -558,7 +566,7 @@
         "defaults": {"color": {"mode": "thresholds"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"},
         "overrides": [{"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}]}]
       },
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 39},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 49},
       "id": 15,
       "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
       "pluginVersion": "13.0.2",
@@ -571,7 +579,7 @@
     }
   ],
   "preload": false,
-  "refresh": "1m",
+  "refresh": "5m",
   "schemaVersion": 41,
   "tags": ["OCI", "limits", "capacity", "operations"],
   "templating": {

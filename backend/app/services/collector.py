@@ -169,11 +169,7 @@ class LimitsCollector:
             for service_name, future in futures:
                 scan.current_service = service_name
                 try:
-                    values = [
-                        value
-                        for value in future.result()
-                        if not _is_dynamic_compute_limit_value(service_name, value)
-                    ]
+                    values = list(future.result())
                     discovered.append((service_name, values))
                     scan.total_limits_discovered += len(values)
                 except OciSdkError as exc:
@@ -296,13 +292,11 @@ class LimitsCollector:
         value: Any,
         availability: dict[str, Any],
     ) -> None:
-        if _is_dynamic_compute_limit_value(service_name, value):
-            return
-
         limit_name = _field(value, "name")
         if not limit_name:
             return
 
+        is_dynamic_compute = _is_dynamic_compute_limit_value(service_name, value)
         scope_type = _field(value, "scope_type") or "UNKNOWN"
         availability_domain = _field(value, "availability_domain")
         allowed_limit = _num(_field(value, "value"))
@@ -324,9 +318,20 @@ class LimitsCollector:
         available = _num(_field(data, "available"))
         fractional_usage = _num(_field(data, "fractional_usage"))
         fractional_availability = _num(_field(data, "fractional_availability"))
-        normalized_allowed = effective_quota if effective_quota is not None else allowed_limit
+        if is_dynamic_compute:
+            normalized_allowed = None
+            normalized_effective_quota = None
+            normalized_available = None
+            normalized_fractional_usage = None
+            normalized_fractional_availability = None
+        else:
+            normalized_allowed = effective_quota if effective_quota is not None else allowed_limit
+            normalized_effective_quota = effective_quota
+            normalized_available = available
+            normalized_fractional_usage = fractional_usage
+            normalized_fractional_availability = fractional_availability
 
-        if status == "ok" and used is None and available is None:
+        if status == "ok" and used is None and normalized_available is None:
             status = "unsupported"
 
         percent_used = _percent_used(normalized_allowed, used)
@@ -337,11 +342,11 @@ class LimitsCollector:
             scan_run_id=scan.id,
             collected_at=collected_at,
             allowed_limit=normalized_allowed,
-            effective_quota_value=effective_quota,
+            effective_quota_value=normalized_effective_quota,
             used=used,
-            available=available,
-            fractional_usage=fractional_usage,
-            fractional_availability=fractional_availability,
+            available=normalized_available,
+            fractional_usage=normalized_fractional_usage,
+            fractional_availability=normalized_fractional_availability,
             percent_used=percent_used,
             collection_status=status,
             raw_json=self.sdk.to_dict(data) or self.sdk.to_dict(value),
@@ -351,7 +356,7 @@ class LimitsCollector:
 
         limit_item.last_allowed_limit = normalized_allowed
         limit_item.last_used = used
-        limit_item.last_available = available
+        limit_item.last_available = normalized_available
         limit_item.last_percent_used = percent_used
         limit_item.last_collection_status = status
         limit_item.last_collected_at = collected_at

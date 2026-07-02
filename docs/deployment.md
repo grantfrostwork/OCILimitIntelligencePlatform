@@ -72,7 +72,7 @@ For an external Prometheus deployment, add the VM as a scrape target:
 ```yaml
 scrape_configs:
   - job_name: oci-lip
-    scrape_interval: 60s
+    scrape_interval: 5m
     static_configs:
       - targets: ["<vm-ip>:80"]
 ```
@@ -81,6 +81,7 @@ Useful Grafana PromQL queries:
 
 ```promql
 topk(10, oci_lip_limit_usage_percent)
+topk(100, oci_lip_limit_used{service="compute"} > 0)
 oci_lip_limit_usage_percent >= on() oci_lip_warning_threshold_percent
 time() - oci_lip_scan_last_success_timestamp_seconds
 sum by (severity) (oci_lip_alerts_open)

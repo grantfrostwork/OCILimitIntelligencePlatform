@@ -1,6 +1,6 @@
 global:
-  scrape_interval: 60s
-  evaluation_interval: 60s
+  scrape_interval: 5m
+  evaluation_interval: 5m
   external_labels:
     platform: oci-lip
     tenancy: grantf

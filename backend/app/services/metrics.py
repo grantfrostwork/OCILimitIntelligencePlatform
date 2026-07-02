@@ -52,7 +52,7 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
     )
     used = Gauge(
         "oci_lip_limit_used",
-        "Current usage for an OCI service limit.",
+        "Current OCI-reported usage for a service limit, including usage-only dynamic limits.",
         LIMIT_LABELS,
         registry=registry,
     )

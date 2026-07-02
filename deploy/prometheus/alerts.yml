@@ -1,6 +1,6 @@
 groups:
   - name: oci-lip-capacity
-    interval: 60s
+    interval: 5m
     rules:
       - alert: OciLipLimitCritical
         expr: oci_lip_limit_usage_percent >= on() group_left oci_lip_critical_threshold_percent

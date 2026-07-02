@@ -20,4 +20,4 @@ datasources:
       prometheusType: Prometheus
       prometheusVersion: 3.12.0
       cacheLevel: High
-      timeInterval: 60s
+      timeInterval: 5m

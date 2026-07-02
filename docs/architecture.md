@@ -56,8 +56,9 @@ This is required because OCI returns separate rows for AD, region, and global li
 
 Some OCI limits return null usage or are unsupported by the resource availability API. LIP stores those rows with `collection_status=unsupported` so they remain visible but do not generate false percentage alerts.
 
-Compute limit values whose allowed value is the string `Dynamic` are ignored before availability
-collection and are not stored as numeric limits.
+Compute limit values whose allowed value is the string `Dynamic` retain OCI-reported usage when it is
+available. Their allowed value, remaining capacity, percentage, trend, and threshold-alert fields stay
+unset so LIP never treats `Dynamic` as a numeric quota.
 
 ## Prometheus Exporter
 
@@ -66,7 +67,7 @@ region, service, limit name, scope, and availability domain. The exporter publis
 available, usage percent, collection status, collection timestamp, scan status/duration/progress, and
 open-alert metrics. This stable label model is easier to query than dynamically generated metric names.
 
-Prometheus scrapes the API over the private Compose network every 60 seconds and retains no more than
+Prometheus scrapes the API over the private Compose network every five minutes and retains no more than
 30 days or 5 GB of samples. It is intentionally not published on a host port. Grafana queries Prometheus
 over that same network and is reverse-proxied by the frontend NGINX container under `/grafana/`.
 
