@@ -80,7 +80,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max(oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "expr": "max(oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
           "instant": true,
           "legendFormat": "Peak utilization",
           "range": false,
@@ -122,7 +122,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool scalar(oci_lip_warning_threshold_percent))",
+          "expr": "sum(oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool scalar(oci_lip_warning_threshold_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\"}))",
           "instant": true,
           "legendFormat": "Warning or higher",
           "range": false,
@@ -164,7 +164,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool 100)",
+          "expr": "sum(oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool 100)",
           "instant": true,
           "legendFormat": "At capacity",
           "range": false,
@@ -210,7 +210,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "time() - max(oci_lip_scan_last_success_timestamp_seconds{region=~\"$region\"})",
+          "expr": "time() - max(oci_lip_scan_last_success_timestamp_seconds{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\"})",
           "instant": true,
           "legendFormat": "Scan age",
           "range": false,
@@ -297,7 +297,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sort_desc(max by (service) (oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"}))",
+          "expr": "sort_desc(max by (service) (oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"}))",
           "instant": true,
           "legendFormat": "{{service}}",
           "range": false,
@@ -323,7 +323,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "topk(25, oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "expr": "topk(25, oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -368,7 +368,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "topk(12, oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "expr": "topk(12, oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
           "legendFormat": "{{service}} / {{limit_name}} · {{availability_domain}}",
           "range": true,
           "refId": "A"
@@ -394,7 +394,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (status) (oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\",status=~\"$collection_status\"})",
+          "expr": "sum by (status) (oci_lip_limit_collection_status{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\",status=~\"$collection_status\"})",
           "instant": true,
           "legendFormat": "{{status}}",
           "range": false,
@@ -437,7 +437,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "topk(100, oci_lip_limit_used{service=\"compute\",region=~\"$region\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} > 0)",
+          "expr": "topk(100, oci_lip_limit_used{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",service=\"compute\",region=~\"$region\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} > 0)",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -475,7 +475,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "topk(100, oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "expr": "topk(100, oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -503,7 +503,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sort_desc(sum by (service) (oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool scalar(oci_lip_warning_threshold_percent)))",
+          "expr": "sort_desc(sum by (service) (oci_lip_limit_usage_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool scalar(oci_lip_warning_threshold_percent{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\"})))",
           "instant": true,
           "legendFormat": "{{service}}",
           "range": false,
@@ -533,7 +533,7 @@
       "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
       "pluginVersion": "13.0.2",
       "targets": [
-        {"editorMode": "code", "expr": "oci_lip_scan_last_duration_seconds{region=~\"$region\"}", "legendFormat": "{{region}} · {{status}}", "range": true, "refId": "A"}
+        {"editorMode": "code", "expr": "oci_lip_scan_last_duration_seconds{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\"}", "legendFormat": "{{region}} · {{status}}", "range": true, "refId": "A"}
       ],
       "title": "Scan Duration",
       "type": "timeseries"
@@ -554,7 +554,7 @@
       "options": {"displayMode": "gradient", "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
       "pluginVersion": "13.0.2",
       "targets": [
-        {"editorMode": "code", "expr": "sum by (severity) (oci_lip_alerts_open)", "instant": true, "legendFormat": "{{severity}}", "range": false, "refId": "A"}
+        {"editorMode": "code", "expr": "sum by (severity) (oci_lip_alerts_open{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\"})", "instant": true, "legendFormat": "{{severity}}", "range": false, "refId": "A"}
       ],
       "title": "Open LIP Alerts",
       "type": "bargauge"
@@ -600,9 +600,9 @@
       "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
       "pluginVersion": "13.0.2",
       "targets": [
-        {"editorMode": "code", "expr": "oci_lip_scan_last_api_requests{region=~\"$region\"}", "legendFormat": "{{region}} · Requests", "range": true, "refId": "A"},
-        {"editorMode": "code", "expr": "oci_lip_scan_last_api_retries{region=~\"$region\"}", "legendFormat": "{{region}} · Retries", "range": true, "refId": "B"},
-        {"editorMode": "code", "expr": "oci_lip_scan_last_api_throttles{region=~\"$region\"}", "legendFormat": "{{region}} · Throttles", "range": true, "refId": "C"}
+        {"editorMode": "code", "expr": "oci_lip_scan_last_api_requests{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\"}", "legendFormat": "{{region}} · Requests", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "oci_lip_scan_last_api_retries{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\"}", "legendFormat": "{{region}} · Retries", "range": true, "refId": "B"},
+        {"editorMode": "code", "expr": "oci_lip_scan_last_api_throttles{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\"}", "legendFormat": "{{region}} · Throttles", "range": true, "refId": "C"}
       ],
       "title": "OCI API Request Pressure",
       "type": "timeseries"
@@ -619,7 +619,7 @@
       "options": {"displayMode": "basic", "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": false, "sizing": "auto", "valueMode": "hidden"},
       "pluginVersion": "13.0.2",
       "targets": [
-        {"editorMode": "code", "expr": "oci_lip_region_enabled{region=~\"$region\",subscription_status=\"READY\"} == 1", "instant": true, "legendFormat": "{{region}}", "range": false, "refId": "A"}
+        {"editorMode": "code", "expr": "oci_lip_region_enabled{environment=\"production\",job=\"oci-lip-api\",instance=\"api:8000\",region=~\"$region\",subscription_status=\"READY\"} == 1", "instant": true, "legendFormat": "{{region}}", "range": false, "refId": "A"}
       ],
       "title": "Enabled Regional Scanners",
       "type": "bargauge"

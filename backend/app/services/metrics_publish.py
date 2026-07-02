@@ -22,6 +22,8 @@ from app.services.metrics import render_metrics
 
 
 TERMINAL_REQUEST_STATUSES = ("succeeded", "failed")
+PROMETHEUS_JOB = "oci-lip-api"
+PROMETHEUS_INSTANCE = "api:8000"
 
 
 def publish_batch_metrics_if_complete(
@@ -115,10 +117,13 @@ def _build_otlp_payload(
     resource_metrics.resource.CopyFrom(
         Resource(
             attributes=[
-                KeyValue(key="service.name", value=AnyValue(string_value="oci-lip")),
+                KeyValue(
+                    key="service.name",
+                    value=AnyValue(string_value=PROMETHEUS_JOB),
+                ),
                 KeyValue(
                     key="service.instance.id",
-                    value=AnyValue(string_value="oci-lip-worker"),
+                    value=AnyValue(string_value=PROMETHEUS_INSTANCE),
                 ),
             ]
         )
@@ -143,8 +148,6 @@ def _build_otlp_payload(
             labels = {
                 **sample.labels,
                 "environment": environment,
-                "instance": "api:8000",
-                "job": "oci-lip-api",
             }
             point = NumberDataPoint(
                 attributes=[

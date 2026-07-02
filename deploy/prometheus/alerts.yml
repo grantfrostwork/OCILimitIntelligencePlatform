@@ -3,7 +3,7 @@ groups:
     interval: 5m
     rules:
       - alert: OciLipLimitCritical
-        expr: oci_lip_limit_usage_percent >= on() group_left oci_lip_critical_threshold_percent
+        expr: oci_lip_limit_usage_percent{environment="production",job="oci-lip-api",instance="api:8000"} >= on() group_left oci_lip_critical_threshold_percent{environment="production",job="oci-lip-api",instance="api:8000"}
         for: 5m
         labels:
           severity: critical
@@ -12,7 +12,7 @@ groups:
           description: "{{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }} is {{ $value | printf \"%.1f\" }}% used."
 
       - alert: OciLipLimitWarning
-        expr: (oci_lip_limit_usage_percent >= on() group_left oci_lip_warning_threshold_percent) and (oci_lip_limit_usage_percent < on() group_left oci_lip_critical_threshold_percent)
+        expr: (oci_lip_limit_usage_percent{environment="production",job="oci-lip-api",instance="api:8000"} >= on() group_left oci_lip_warning_threshold_percent{environment="production",job="oci-lip-api",instance="api:8000"}) and (oci_lip_limit_usage_percent{environment="production",job="oci-lip-api",instance="api:8000"} < on() group_left oci_lip_critical_threshold_percent{environment="production",job="oci-lip-api",instance="api:8000"})
         for: 10m
         labels:
           severity: warning
@@ -21,7 +21,7 @@ groups:
           description: "{{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }} is {{ $value | printf \"%.1f\" }}% used."
 
       - alert: OciLipCollectionFailed
-        expr: oci_lip_limit_collection_status{status="failed"} == 1
+        expr: oci_lip_limit_collection_status{environment="production",job="oci-lip-api",instance="api:8000",status="failed"} == 1
         for: 10m
         labels:
           severity: warning
@@ -30,7 +30,7 @@ groups:
           description: "Collection failed for {{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }}."
 
       - alert: OciLipScanStale
-        expr: (time() - oci_lip_scan_last_success_timestamp_seconds > scalar(oci_lip_scan_schedule_interval_seconds) + 900) and on() (oci_lip_scan_schedule_enabled == 1)
+        expr: (time() - oci_lip_scan_last_success_timestamp_seconds{environment="production",job="oci-lip-api",instance="api:8000"} > scalar(oci_lip_scan_schedule_interval_seconds{environment="production",job="oci-lip-api-health",instance="api:8000"}) + 900) and on() (oci_lip_scan_schedule_enabled{environment="production",job="oci-lip-api-health",instance="api:8000"} == 1)
         for: 15m
         labels:
           severity: critical
@@ -48,7 +48,7 @@ groups:
           description: "Prometheus has been unable to scrape the OCI LIP API for five minutes."
 
       - alert: OciLipApiThrottling
-        expr: oci_lip_scan_last_api_throttles > 0
+        expr: oci_lip_scan_last_api_throttles{environment="production",job="oci-lip-api",instance="api:8000"} > 0
         for: 5m
         labels:
           severity: warning

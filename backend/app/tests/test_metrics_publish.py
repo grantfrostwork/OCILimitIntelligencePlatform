@@ -26,9 +26,14 @@ def test_prometheus_text_is_converted_to_timestamped_otlp_gauges():
         "production",
     )
     request = ExportMetricsServiceRequest.FromString(payload)
-    metric = request.resource_metrics[0].scope_metrics[0].metrics[0]
+    resource_metrics = request.resource_metrics[0]
+    metric = resource_metrics.scope_metrics[0].metrics[0]
     point = metric.gauge.data_points[0]
     labels = {item.key: item.value.string_value for item in point.attributes}
+    resource_labels = {
+        item.key: item.value.string_value
+        for item in resource_metrics.resource.attributes
+    }
 
     assert metric.name == "oci_lip_limit_used"
     assert point.as_double == 17
@@ -36,7 +41,10 @@ def test_prometheus_text_is_converted_to_timestamped_otlp_gauges():
     assert labels["region"] == "us-ashburn-1"
     assert labels["service"] == "compute"
     assert labels["environment"] == "production"
-    assert labels["job"] == "oci-lip-api"
+    assert "job" not in labels
+    assert "instance" not in labels
+    assert resource_labels["service.name"] == "oci-lip-api"
+    assert resource_labels["service.instance.id"] == "api:8000"
 
 
 def test_metrics_publication_can_be_explicitly_disabled():
