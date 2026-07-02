@@ -94,6 +94,10 @@ main {
   gap: 12px;
 }
 
+.topbar-actions {
+  align-items: flex-end;
+}
+
 .panel-header {
   justify-content: space-between;
   margin-bottom: 16px;
