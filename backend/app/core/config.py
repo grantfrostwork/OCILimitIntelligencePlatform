@@ -16,15 +16,17 @@ class Settings(BaseSettings):
 
     oci_auth_mode: Literal["profile", "instance_principal"] = "profile"
     oci_profile: str = "DEFAULT"
+    oci_config_file: str = "~/.oci/config"
     oci_tenancy_ocid: str = (
         "ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq"
     )
     oci_default_region: str = "us-ashburn-1"
     oci_scan_all_regions: bool = False
-    oci_cli_path: str = "oci"
-    oci_command_timeout_seconds: int = 45
+    oci_connect_timeout_seconds: int = 10
+    oci_read_timeout_seconds: int = 45
     oci_max_service_workers: int = 6
     oci_max_limit_workers: int = 10
+    oci_db_commit_batch_size: int = 25
 
     warning_threshold_percent: float = 90.0
     critical_threshold_percent: float = 98.0

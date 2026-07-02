@@ -13,7 +13,10 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - OCI Notifications topic/subscription integration for alerts.
 - Operations dashboard with filtering, sorting, pagination, export, service drilldown, alerts, and trend cards.
 - Bill of Materials upload and analysis for PDF, DOCX, XLSX, CSV, TXT, JSON, and Terraform plan JSON-style files.
-- Docker Compose deployment shape with PostgreSQL, Redis, API, worker, and frontend services.
+- Direct OCI Python SDK integration with instance-principal authentication, retries, and pagination.
+- Bounded parallel collection for service values and resource availability.
+- Prometheus metrics for every persisted limit plus scanner and alert health.
+- Docker Compose deployment with PostgreSQL, API, worker, and frontend services.
 
 ## Quick Start
 
@@ -42,7 +45,7 @@ Open `http://localhost:5173`.
 The standalone bill comparison analyzer builds an offline OCI service-limit catalog, then maps
 AWS bill-comparison rows to OCI limit names without AI calls.
 
-Refresh the offline catalog from the authenticated OCI CLI DEFAULT profile:
+Refresh the offline catalog through the OCI Python SDK using the authenticated `DEFAULT` profile:
 
 ```bash
 cd "/Users/grafrost/Documents/OCI LIP/backend"
@@ -71,8 +74,25 @@ OCI_AUTH_MODE=instance_principal
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq
 OCI_DEFAULT_REGION=us-ashburn-1
 LIP_ENABLE_NOTIFICATIONS=true
-LIP_NOTIFICATION_EMAILS=grant.frost@oracle.com
+LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
 ```
+
+The VM uses the OCI Python SDK directly. It does not install or invoke the OCI CLI. Service-value
+calls and resource-availability calls are parallelized with `OCI_MAX_SERVICE_WORKERS` and
+`OCI_MAX_LIMIT_WORKERS` respectively.
+
+## Prometheus
+
+Prometheus can scrape `http://<vm-ip>/metrics`. The endpoint exports persisted limit state and does
+not contact OCI during a scrape. Useful series include:
+
+- `oci_lip_limit_allowed`
+- `oci_lip_limit_used`
+- `oci_lip_limit_available`
+- `oci_lip_limit_usage_percent`
+- `oci_lip_limit_collection_status`
+- `oci_lip_scan_last_success_timestamp_seconds`
+- `oci_lip_alerts_open`
 
 Local development uses `DEFAULT` profile by default.
 

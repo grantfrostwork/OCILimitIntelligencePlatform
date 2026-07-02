@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models import LimitItem, LimitSnapshot, OciService, ScanRun, utcnow
+from app.models import LimitItem, LimitSnapshot, OciService, ScanRun, new_id, utcnow
 from app.services.alerts import AlertService
-from app.services.oci_cli import OciCli, OciCliError
+from app.services.oci_sdk import OciSdk, OciSdkError
 from app.services.trends import TrendService
+
+
+JobT = TypeVar("JobT")
+ResultT = TypeVar("ResultT")
+
+
+def _field(value: Any, name: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(name, value.get(name.replace("_", "-"), default))
+    return getattr(value, name, default)
 
 
 def _num(value: Any) -> float | None:
@@ -30,8 +43,8 @@ def _percent_used(allowed: float | None, used: float | None) -> float | None:
     return max(0.0, min(10_000.0, (used / allowed) * 100.0))
 
 
-def _is_dynamic_compute_limit_value(service_name: str, value: dict) -> bool:
-    raw_value = value.get("value")
+def _is_dynamic_compute_limit_value(service_name: str, value: Any) -> bool:
+    raw_value = _field(value, "value")
     return (
         service_name == "compute"
         and isinstance(raw_value, str)
@@ -39,31 +52,51 @@ def _is_dynamic_compute_limit_value(service_name: str, value: dict) -> bool:
     )
 
 
+def _bounded_futures(
+    executor: ThreadPoolExecutor,
+    jobs: Iterable[JobT],
+    submit: Callable[[ThreadPoolExecutor, JobT], Future[ResultT]],
+    *,
+    max_pending: int,
+) -> Iterator[tuple[JobT, Future[ResultT]]]:
+    iterator = iter(jobs)
+    pending: dict[Future[ResultT], JobT] = {}
+
+    def fill() -> None:
+        while len(pending) < max(1, max_pending):
+            try:
+                job = next(iterator)
+            except StopIteration:
+                break
+            pending[submit(executor, job)] = job
+
+    fill()
+    while pending:
+        completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+        for future in completed:
+            yield pending.pop(future), future
+        fill()
+
+
 class LimitsCollector:
-    def __init__(self, db: Session, settings: Settings, cli: OciCli | None = None) -> None:
+    def __init__(self, db: Session, settings: Settings, sdk: OciSdk | None = None) -> None:
         self.db = db
         self.settings = settings
-        self.cli = cli or OciCli(settings)
-        self.alerts = AlertService(db, settings, self.cli)
+        self.sdk = sdk or OciSdk(settings)
+        self.alerts = AlertService(db, settings, self.sdk)
+        self._limit_item_cache: dict[tuple[str, str, str, str, str | None, str], LimitItem] = {}
 
     def discover_regions(self) -> list[str]:
         if not self.settings.oci_scan_all_regions:
             return [self.settings.oci_default_region]
-        response = self.cli.run(
-            [
-                "iam",
-                "region-subscription",
-                "list",
-                "--tenancy-id",
-                self.settings.oci_tenancy_ocid,
-                "--all",
-            ],
+        subscriptions = self.sdk.list_region_subscriptions(
+            self.settings.oci_tenancy_ocid,
             region=self.settings.oci_default_region,
         )
         regions = [
-            item["region-name"]
-            for item in response.get("data", [])
-            if item.get("status") == "READY" and item.get("region-name")
+            _field(item, "region_name")
+            for item in subscriptions
+            if _field(item, "status") == "READY" and _field(item, "region_name")
         ]
         return regions or [self.settings.oci_default_region]
 
@@ -81,49 +114,16 @@ class LimitsCollector:
             self.db.commit()
 
             scan.current_stage = "discovering_limits"
-            service_limit_values: list[tuple[str, list[dict]]] = []
-            for service in services:
-                service_name = service.get("name")
-                if not service_name:
-                    continue
-                scan.current_service = service_name
-                try:
-                    values = self._list_limit_values(target_region, service_name)
-                    values = [
-                        value
-                        for value in values
-                        if not _is_dynamic_compute_limit_value(service_name, value)
-                    ]
-                    service_limit_values.append((service_name, values))
-                    scan.total_limits_discovered += len(values)
-                except OciCliError as exc:
-                    scan.availability_errors += 1
-                    self.alerts.upsert_alert(
-                        alert_type="service_scan_failed",
-                        severity="warning",
-                        title=f"OCI service scan failed: {service_name}",
-                        message=str(exc),
-                        region=target_region,
-                        service_name=service_name,
-                    )
-                finally:
-                    scan.services_scanned += 1
-                    self.db.commit()
+            self.db.commit()
+            service_limit_values = self._discover_limit_values(scan, target_region, services)
 
             scan.current_stage = "collecting_availability"
             scan.current_service = None
-            scan.services_scanned = 0
+            scan.services_scanned = sum(not values for _, values in service_limit_values)
+            self._load_limit_item_cache(target_region)
             self.db.commit()
 
-            for service_name, values in service_limit_values:
-                scan.current_service = service_name
-                self.db.commit()
-                for value in values:
-                    self._collect_limit_value(scan, target_region, service_name, value)
-                    scan.limits_scanned += 1
-                    self.db.commit()
-                scan.services_scanned += 1
-                self.db.commit()
+            self._collect_availability(scan, target_region, service_limit_values)
 
             scan.current_stage = "calculating_trends"
             scan.current_service = None
@@ -153,69 +153,159 @@ class LimitsCollector:
     def run_all_configured_regions(self) -> list[ScanRun]:
         return [self.run_scan(region) for region in self.discover_regions()]
 
-    def _list_services(self, region: str) -> list[dict]:
-        response = self.cli.run(
-            [
-                "limits",
-                "service",
-                "list",
-                "--compartment-id",
-                self.settings.oci_tenancy_ocid,
-                "--all",
-            ],
+    def _discover_limit_values(
+        self, scan: ScanRun, region: str, services: list[Any]
+    ) -> list[tuple[str, list[Any]]]:
+        service_names = [name for service in services if (name := _field(service, "name"))]
+        discovered: list[tuple[str, list[Any]]] = []
+        workers = max(1, self.settings.oci_max_service_workers)
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="oci-services") as executor:
+            futures = _bounded_futures(
+                executor,
+                service_names,
+                lambda pool, name: pool.submit(self._list_limit_values, region, name),
+                max_pending=workers * 2,
+            )
+            for service_name, future in futures:
+                scan.current_service = service_name
+                try:
+                    values = [
+                        value
+                        for value in future.result()
+                        if not _is_dynamic_compute_limit_value(service_name, value)
+                    ]
+                    discovered.append((service_name, values))
+                    scan.total_limits_discovered += len(values)
+                except OciSdkError as exc:
+                    scan.availability_errors += 1
+                    self.alerts.upsert_alert(
+                        alert_type="service_scan_failed",
+                        severity="warning",
+                        title=f"OCI service scan failed: {service_name}",
+                        message=str(exc),
+                        region=region,
+                        service_name=service_name,
+                    )
+                finally:
+                    scan.services_scanned += 1
+                    if scan.services_scanned % self.settings.oci_db_commit_batch_size == 0:
+                        self.db.commit()
+        self.db.commit()
+        return discovered
+
+    def _collect_availability(
+        self,
+        scan: ScanRun,
+        region: str,
+        service_limit_values: list[tuple[str, list[Any]]],
+    ) -> None:
+        jobs = (
+            (service_name, value)
+            for service_name, values in service_limit_values
+            for value in values
+        )
+        expected = {service_name: len(values) for service_name, values in service_limit_values}
+        completed: Counter[str] = Counter()
+        workers = max(1, self.settings.oci_max_limit_workers)
+
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="oci-limits") as executor:
+            futures = _bounded_futures(
+                executor,
+                jobs,
+                lambda pool, job: pool.submit(
+                    self._get_availability_for_value,
+                    region,
+                    job[0],
+                    job[1],
+                ),
+                max_pending=workers * 2,
+            )
+            for (service_name, value), future in futures:
+                scan.current_service = service_name
+                availability = future.result()
+                self._persist_limit_value(
+                    scan,
+                    region,
+                    service_name,
+                    value,
+                    availability,
+                )
+                scan.limits_scanned += 1
+                completed[service_name] += 1
+                if completed[service_name] == expected[service_name]:
+                    scan.services_scanned += 1
+                if scan.limits_scanned % self.settings.oci_db_commit_batch_size == 0:
+                    self.db.commit()
+        self.db.commit()
+
+    def _list_services(self, region: str) -> list[Any]:
+        return self.sdk.list_services(self.settings.oci_tenancy_ocid, region=region)
+
+    def _list_limit_values(self, region: str, service_name: str) -> list[Any]:
+        return self.sdk.list_limit_values(
+            self.settings.oci_tenancy_ocid,
+            service_name,
             region=region,
         )
-        return response.get("data", [])
 
-    def _list_limit_values(self, region: str, service_name: str) -> list[dict]:
-        response = self.cli.run(
-            [
-                "limits",
-                "value",
-                "list",
-                "--compartment-id",
-                self.settings.oci_tenancy_ocid,
-                "--service-name",
-                service_name,
-                "--all",
-            ],
-            region=region,
-        )
-        return response.get("data", [])
-
-    def _upsert_services(self, region: str, services: list[dict]) -> None:
+    def _upsert_services(self, region: str, services: list[Any]) -> None:
+        existing = {
+            item.service_name: item
+            for item in self.db.scalars(select(OciService).where(OciService.region == region))
+        }
         for service in services:
-            service_name = service.get("name")
+            service_name = _field(service, "name")
             if not service_name:
                 continue
-            existing = self.db.scalar(
-                select(OciService).where(
-                    OciService.region == region, OciService.service_name == service_name
-                )
-            )
-            if existing:
-                existing.description = service.get("description")
-                existing.discovered_at = utcnow()
+            if service_name in existing:
+                existing[service_name].description = _field(service, "description")
+                existing[service_name].discovered_at = utcnow()
             else:
                 self.db.add(
                     OciService(
                         region=region,
                         service_name=service_name,
-                        description=service.get("description"),
+                        description=_field(service, "description"),
                     )
                 )
 
-    def _collect_limit_value(self, scan: ScanRun, region: str, service_name: str, value: dict) -> None:
+    def _load_limit_item_cache(self, region: str) -> None:
+        items = self.db.scalars(
+            select(LimitItem).where(
+                LimitItem.region == region,
+                LimitItem.compartment_ocid == self.settings.oci_tenancy_ocid,
+            )
+        )
+        self._limit_item_cache = {
+            self._limit_identity(
+                item.region,
+                item.service_name,
+                item.limit_name,
+                item.scope_type,
+                item.availability_domain,
+                item.subscription_id,
+            ): item
+            for item in items
+        }
+
+    def _persist_limit_value(
+        self,
+        scan: ScanRun,
+        region: str,
+        service_name: str,
+        value: Any,
+        availability: dict[str, Any],
+    ) -> None:
         if _is_dynamic_compute_limit_value(service_name, value):
             return
 
-        limit_name = value.get("name")
+        limit_name = _field(value, "name")
         if not limit_name:
             return
 
-        scope_type = value.get("scope-type") or "UNKNOWN"
-        availability_domain = value.get("availability-domain")
-        allowed_limit = _num(value.get("value"))
+        scope_type = _field(value, "scope_type") or "UNKNOWN"
+        availability_domain = _field(value, "availability_domain")
+        allowed_limit = _num(_field(value, "value"))
         limit_item = self._upsert_limit_item(
             region=region,
             service_name=service_name,
@@ -226,15 +316,14 @@ class LimitsCollector:
         )
         previous_allowed = limit_item.last_allowed_limit
 
-        availability = self._get_availability(region, service_name, limit_name, scope_type, availability_domain)
         status = availability["status"]
-        data = availability["data"]
+        data = availability.get("data")
         error_message = availability.get("error")
-        effective_quota = _num(data.get("effective-quota-value")) if data else None
-        used = _num(data.get("used")) if data else None
-        available = _num(data.get("available")) if data else None
-        fractional_usage = _num(data.get("fractional-usage")) if data else None
-        fractional_availability = _num(data.get("fractional-availability")) if data else None
+        effective_quota = _num(_field(data, "effective_quota_value"))
+        used = _num(_field(data, "used"))
+        available = _num(_field(data, "available"))
+        fractional_usage = _num(_field(data, "fractional_usage"))
+        fractional_availability = _num(_field(data, "fractional_availability"))
         normalized_allowed = effective_quota if effective_quota is not None else allowed_limit
 
         if status == "ok" and used is None and available is None:
@@ -243,6 +332,7 @@ class LimitsCollector:
         percent_used = _percent_used(normalized_allowed, used)
         collected_at = utcnow()
         snapshot = LimitSnapshot(
+            id=new_id(),
             limit_item_id=limit_item.id,
             scan_run_id=scan.id,
             collected_at=collected_at,
@@ -254,7 +344,7 @@ class LimitsCollector:
             fractional_availability=fractional_availability,
             percent_used=percent_used,
             collection_status=status,
-            raw_json=data or value,
+            raw_json=self.sdk.to_dict(data) or self.sdk.to_dict(value),
             error_message=error_message,
         )
         self.db.add(snapshot)
@@ -283,22 +373,19 @@ class LimitsCollector:
         availability_domain: str | None,
         allowed_limit: float | None,
     ) -> LimitItem:
-        existing = self.db.scalar(
-            select(LimitItem).where(
-                LimitItem.region == region,
-                LimitItem.compartment_ocid == self.settings.oci_tenancy_ocid,
-                LimitItem.service_name == service_name,
-                LimitItem.limit_name == limit_name,
-                LimitItem.scope_type == scope_type,
-                LimitItem.availability_domain.is_(availability_domain)
-                if availability_domain is None
-                else LimitItem.availability_domain == availability_domain,
-                LimitItem.subscription_id == "",
-            )
+        identity = self._limit_identity(
+            region,
+            service_name,
+            limit_name,
+            scope_type,
+            availability_domain,
+            "",
         )
+        existing = self._limit_item_cache.get(identity)
         if existing:
             return existing
         item = LimitItem(
+            id=new_id(),
             region=region,
             compartment_ocid=self.settings.oci_tenancy_ocid,
             service_name=service_name,
@@ -310,8 +397,45 @@ class LimitsCollector:
             last_allowed_limit=allowed_limit,
         )
         self.db.add(item)
-        self.db.flush()
+        self._limit_item_cache[identity] = item
         return item
+
+    @staticmethod
+    def _limit_identity(
+        region: str,
+        service_name: str,
+        limit_name: str,
+        scope_type: str,
+        availability_domain: str | None,
+        subscription_id: str,
+    ) -> tuple[str, str, str, str, str | None, str]:
+        return (
+            region,
+            service_name,
+            limit_name,
+            scope_type,
+            availability_domain,
+            subscription_id,
+        )
+
+    def _get_availability_for_value(
+        self,
+        region: str,
+        service_name: str,
+        value: Any,
+    ) -> dict[str, Any]:
+        limit_name = _field(value, "name")
+        scope_type = _field(value, "scope_type") or "UNKNOWN"
+        availability_domain = _field(value, "availability_domain")
+        if not limit_name:
+            return {"status": "unsupported", "data": None, "error": "Missing limit name"}
+        return self._get_availability(
+            region,
+            service_name,
+            limit_name,
+            scope_type,
+            availability_domain,
+        )
 
     def _get_availability(
         self,
@@ -320,25 +444,18 @@ class LimitsCollector:
         limit_name: str,
         scope_type: str,
         availability_domain: str | None,
-    ) -> dict:
-        args = [
-            "limits",
-            "resource-availability",
-            "get",
-            "--compartment-id",
-            self.settings.oci_tenancy_ocid,
-            "--service-name",
-            service_name,
-            "--limit-name",
-            limit_name,
-        ]
-        if scope_type == "AD" and availability_domain:
-            args.extend(["--availability-domain", availability_domain])
-
+    ) -> dict[str, Any]:
+        ad = availability_domain if scope_type == "AD" else None
         try:
-            response = self.cli.run(args, region=region)
-            return {"status": "ok", "data": response.get("data", {})}
-        except OciCliError as exc:
-            if self.cli.is_not_found_or_unsupported(exc):
-                return {"status": "unsupported", "data": {}, "error": str(exc)}
-            return {"status": "failed", "data": {}, "error": str(exc)}
+            data = self.sdk.get_resource_availability(
+                self.settings.oci_tenancy_ocid,
+                service_name,
+                limit_name,
+                region=region,
+                availability_domain=ad,
+            )
+            return {"status": "ok", "data": data}
+        except OciSdkError as exc:
+            if self.sdk.is_not_found_or_unsupported(exc):
+                return {"status": "unsupported", "data": None, "error": str(exc)}
+            return {"status": "failed", "data": None, "error": str(exc)}

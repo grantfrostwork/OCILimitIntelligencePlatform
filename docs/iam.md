@@ -17,7 +17,7 @@ Allow dynamic-group lip-vm-dg to manage ons-subscriptions in compartment <lip-co
 Allow dynamic-group lip-vm-dg to use ons-topics in compartment <lip-compartment>
 ```
 
-If the CLI returns authorization errors for region or AD discovery, add:
+If the SDK returns authorization errors for region or AD discovery, add:
 
 ```text
 Allow dynamic-group lip-vm-dg to inspect availability-domains in tenancy

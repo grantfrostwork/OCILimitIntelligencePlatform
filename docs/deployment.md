@@ -22,6 +22,8 @@ Use instance principal auth:
 OCI_AUTH_MODE=instance_principal
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq
 OCI_DEFAULT_REGION=us-ashburn-1
+OCI_MAX_SERVICE_WORKERS=6
+OCI_MAX_LIMIT_WORKERS=10
 LIP_ENABLE_NOTIFICATIONS=true
 LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
 ```
@@ -32,7 +34,7 @@ LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
 docker compose up -d --build
 ```
 
-Open `http://<vm-ip>:8080`.
+Open `http://<vm-ip>`.
 
 For production, place OCI Load Balancer or NGINX TLS termination in front of the frontend container and restrict inbound access.
 
@@ -51,7 +53,32 @@ Encrypt the bucket, apply lifecycle retention, and test restore quarterly.
 
 - API liveness: `/healthz`
 - API readiness: `/readyz`
+- Prometheus metrics: `/metrics`
 - Frontend: `/`
+
+## Prometheus and Grafana
+
+Add the VM as a Prometheus scrape target:
+
+```yaml
+scrape_configs:
+  - job_name: oci-lip
+    scrape_interval: 60s
+    static_configs:
+      - targets: ["<vm-ip>:80"]
+```
+
+Useful Grafana PromQL queries:
+
+```promql
+topk(10, oci_lip_limit_usage_percent)
+oci_lip_limit_usage_percent >= on() oci_lip_warning_threshold_percent
+time() - oci_lip_scan_last_success_timestamp_seconds
+sum by (severity) (oci_lip_alerts_open)
+```
+
+Restrict `/metrics` to the Prometheus network at the NSG, load balancer, or reverse proxy when the
+application is not intended to expose tenancy metadata publicly.
 
 ## Operations
 

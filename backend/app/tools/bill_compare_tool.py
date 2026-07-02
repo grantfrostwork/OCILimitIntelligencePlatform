@@ -12,6 +12,7 @@ from app.services.bill_compare import (
     BillComparisonAnalyzer,
     LimitCatalog,
 )
+from app.services.oci_sdk import OciSdk
 
 
 DEFAULT_CATALOG = Path(__file__).resolve().parents[1] / "data" / "oci_limit_catalog.json"
@@ -28,8 +29,6 @@ def main(argv: list[str] | None = None) -> int:
     refresh.add_argument("--profile", default=None)
     refresh.add_argument("--region", default=None)
     refresh.add_argument("--compartment-id", default=None)
-    refresh.add_argument("--oci-cli-path", default=None)
-    refresh.add_argument("--timeout-seconds", type=int, default=90)
 
     analyze = subparsers.add_parser("analyze", help="Analyze a bill-comparison .xlsx or .csv file.")
     analyze.add_argument("--input", type=Path, required=True)
@@ -50,12 +49,14 @@ def main(argv: list[str] | None = None) -> int:
 
 def _refresh_catalog(args: argparse.Namespace) -> int:
     settings = get_settings()
-    catalog = LimitCatalog.from_oci_cli(
+    sdk_updates = {"oci_default_region": args.region or settings.oci_default_region}
+    if args.profile:
+        sdk_updates.update({"oci_auth_mode": "profile", "oci_profile": args.profile})
+    sdk_settings = settings.model_copy(update=sdk_updates)
+    catalog = LimitCatalog.from_oci_sdk(
         compartment_id=args.compartment_id or settings.oci_tenancy_ocid,
         region=args.region or settings.oci_default_region,
-        profile=args.profile or settings.oci_profile,
-        cli_path=args.oci_cli_path or settings.oci_cli_path,
-        timeout_seconds=args.timeout_seconds,
+        sdk=OciSdk(sdk_settings),
     )
     catalog.save(args.output)
     print(

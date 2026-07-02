@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models import Alert, AlertEvent, LimitItem, LimitSnapshot, NotificationConfig, utcnow
-from app.services.oci_cli import OciCli, OciCliError
+from app.services.oci_sdk import OciSdk, OciSdkError
 
 
 def _fingerprint(parts: list[Any]) -> str:
@@ -18,10 +18,10 @@ def _fingerprint(parts: list[Any]) -> str:
 
 
 class AlertService:
-    def __init__(self, db: Session, settings: Settings, cli: OciCli | None = None) -> None:
+    def __init__(self, db: Session, settings: Settings, sdk: OciSdk | None = None) -> None:
         self.db = db
         self.settings = settings
-        self.cli = cli or OciCli(settings)
+        self.sdk = sdk or OciSdk(settings)
 
     def upsert_alert(
         self,
@@ -71,7 +71,7 @@ class AlertService:
                 alert_type="collection_failed",
                 severity="warning",
                 title=f"OCI limit collection failed for {limit_item.service_name}",
-                message=snapshot.error_message or "OCI CLI collection failed.",
+                message=snapshot.error_message or "OCI SDK collection failed.",
                 region=limit_item.region,
                 service_name=limit_item.service_name,
                 limit_name=limit_item.limit_name,
@@ -143,23 +143,15 @@ class AlertService:
         event = AlertEvent(alert_id=alert.id, message=body, delivery_status="pending")
         self.db.add(event)
         try:
-            response = self.cli.run(
-                [
-                    "ons",
-                    "message",
-                    "publish",
-                    "--topic-id",
-                    config.topic_id,
-                    "--title",
-                    alert.title[:255],
-                    "--body",
-                    body[:60_000],
-                ],
+            response = self.sdk.publish_message(
+                config.topic_id,
+                alert.title[:255],
+                body[:60_000],
                 region=config.region,
             )
             event.delivery_status = "sent"
-            event.raw_response = response
-        except OciCliError as exc:
+            event.raw_response = self.sdk.to_dict(response)
+        except OciSdkError as exc:
             event.delivery_status = "failed"
             event.raw_response = {"error": str(exc)}
 
@@ -182,35 +174,24 @@ class AlertService:
             return config
 
         topic = self._find_or_create_topic(topic_name, compartment_id, region)
-        config.topic_id = topic.get("topic-id") or topic.get("id")
+        config.topic_id = topic.topic_id
         config.updated_at = utcnow()
         config.subscription_status = self._ensure_subscriptions(
             config.topic_id, compartment_id, region, self.settings.lip_notification_emails
         )
         return config
 
-    def _find_or_create_topic(self, name: str, compartment_id: str, region: str) -> dict:
-        topics = self.cli.run(
-            ["ons", "topic", "list", "--compartment-id", compartment_id, "--all"],
-            region=region,
-        ).get("data", [])
+    def _find_or_create_topic(self, name: str, compartment_id: str, region: str) -> Any:
+        topics = self.sdk.list_topics(compartment_id, region=region, name=name)
         for topic in topics:
-            if topic.get("name") == name and topic.get("lifecycle-state") != "DELETED":
+            if topic.name == name and topic.lifecycle_state != "DELETED":
                 return topic
-        return self.cli.run(
-            [
-                "ons",
-                "topic",
-                "create",
-                "--compartment-id",
-                compartment_id,
-                "--name",
-                name,
-                "--description",
-                "OCI Limit Intelligence Platform alerts",
-            ],
+        return self.sdk.create_topic(
+            compartment_id,
+            name,
+            "OCI Limit Intelligence Platform alerts",
             region=region,
-        ).get("data", {})
+        )
 
     def _ensure_subscriptions(
         self, topic_id: str | None, compartment_id: str, region: str, emails: list[str]
@@ -218,33 +199,20 @@ class AlertService:
         if not topic_id:
             return {"error": "missing topic id"}
         result: dict[str, str] = {}
-        existing = self.cli.run(
-            ["ons", "subscription", "list", "--compartment-id", compartment_id, "--topic-id", topic_id, "--all"],
-            region=region,
-        ).get("data", [])
+        existing = self.sdk.list_subscriptions(compartment_id, topic_id, region=region)
         endpoints = {
-            item.get("endpoint", "").lower(): item.get("lifecycle-state", "UNKNOWN")
+            (item.endpoint or "").lower(): item.lifecycle_state or "UNKNOWN"
             for item in existing
         }
         for email in emails:
             if endpoints.get(email.lower()):
                 result[email] = endpoints[email.lower()]
                 continue
-            response = self.cli.run(
-                [
-                    "ons",
-                    "subscription",
-                    "create",
-                    "--compartment-id",
-                    compartment_id,
-                    "--topic-id",
-                    topic_id,
-                    "--protocol",
-                    "EMAIL",
-                    "--subscription-endpoint",
-                    email,
-                ],
+            subscription = self.sdk.create_subscription(
+                compartment_id,
+                topic_id,
+                email,
                 region=region,
             )
-            result[email] = response.get("data", {}).get("lifecycle-state", "PENDING")
+            result[email] = subscription.lifecycle_state or "PENDING"
         return result

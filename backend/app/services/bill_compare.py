@@ -4,7 +4,6 @@ import csv
 import json
 import math
 import re
-import subprocess
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -12,6 +11,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from openpyxl import load_workbook
+
+from app.services.oci_sdk import OciSdk
 
 
 DEFAULT_HOURS_PER_MONTH = 744.0
@@ -98,10 +99,12 @@ class LimitCatalog:
         definitions: Iterable[LimitDefinition],
         generated_at: str | None = None,
         region: str | None = None,
+        source: str | None = None,
         source_commands: list[list[str]] | None = None,
     ) -> None:
         self.generated_at = generated_at
         self.region = region
+        self.source = source
         self.source_commands = source_commands or []
         self.services = {service.name: service for service in services if service.name}
         self.definitions_by_service: dict[str, list[LimitDefinition]] = defaultdict(list)
@@ -146,6 +149,7 @@ class LimitCatalog:
             definitions=definitions,
             generated_at=payload.get("generated_at"),
             region=payload.get("region"),
+            source=payload.get("source"),
             source_commands=payload.get("source_commands", []),
         )
 
@@ -154,64 +158,43 @@ class LimitCatalog:
         return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
     @classmethod
-    def from_oci_cli(
+    def from_oci_sdk(
         cls,
         *,
         compartment_id: str,
         region: str,
-        profile: str = "DEFAULT",
-        cli_path: str = "oci",
-        timeout_seconds: int = 90,
+        sdk: OciSdk,
     ) -> "LimitCatalog":
-        base = [cli_path, "--profile", profile, "--region", region, "--output", "json"]
-        service_cmd = base + [
-            "limits",
-            "service",
-            "list",
-            "--compartment-id",
-            compartment_id,
-            "--all",
-        ]
-        definition_cmd = base + [
-            "limits",
-            "definition",
-            "list",
-            "--compartment-id",
-            compartment_id,
-            "--all",
-        ]
-        services_payload = _run_json_command(service_cmd, timeout_seconds=timeout_seconds)
-        definitions_payload = _run_json_command(definition_cmd, timeout_seconds=timeout_seconds)
+        service_models = sdk.list_services(compartment_id, region=region)
+        definition_models = sdk.list_limit_definitions(compartment_id, region=region)
         services = [
-            LimitService(name=item.get("name", ""), description=item.get("description"))
-            for item in services_payload.get("data", [])
-            if item.get("name")
+            LimitService(name=item.name, description=item.description)
+            for item in service_models
+            if item.name
         ]
         definitions = [
             LimitDefinition(
-                service_name=item.get("service-name", ""),
-                name=item.get("name", ""),
-                description=item.get("description"),
-                scope_type=item.get("scope-type"),
-                is_deprecated=bool(item.get("is-deprecated", False)),
-                is_dynamic=bool(item.get("is-dynamic", False)),
-                is_eligible_for_limit_increase=bool(
-                    item.get("is-eligible-for-limit-increase", False)
-                ),
+                service_name=item.service_name,
+                name=item.name,
+                description=item.description,
+                scope_type=item.scope_type,
+                is_deprecated=bool(item.is_deprecated),
+                is_dynamic=bool(item.is_dynamic),
+                is_eligible_for_limit_increase=bool(item.is_eligible_for_limit_increase),
                 is_resource_availability_supported=bool(
-                    item.get("is-resource-availability-supported", False)
+                    item.is_resource_availability_supported
                 ),
-                are_quotas_supported=bool(item.get("are-quotas-supported", False)),
+                are_quotas_supported=bool(item.are_quotas_supported),
             )
-            for item in definitions_payload.get("data", [])
-            if item.get("service-name") and item.get("name")
+            for item in definition_models
+            if item.service_name and item.name
         ]
         return cls(
             services=services,
             definitions=definitions,
             generated_at=datetime.now(UTC).isoformat(),
             region=region,
-            source_commands=[service_cmd, definition_cmd],
+            source="oci-python-sdk",
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -225,6 +208,7 @@ class LimitCatalog:
         return {
             "generated_at": self.generated_at,
             "region": self.region,
+            "source": self.source,
             "source_commands": self.source_commands,
             "services": [
                 asdict(service) for service in sorted(self.services.values(), key=lambda s: s.name)
@@ -316,23 +300,6 @@ def _term_score(haystack_norm: str, haystack_tokens: set[str], term: str) -> int
     if compact and compact in compact_haystack:
         return 6
     return 0
-
-
-def _run_json_command(command: list[str], *, timeout_seconds: int) -> dict[str, Any]:
-    completed = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
-    if completed.returncode != 0:
-        message = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(f"Command failed ({completed.returncode}): {' '.join(command)}\n{message}")
-    try:
-        return json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Command returned invalid JSON: {' '.join(command)}") from exc
 
 
 @dataclass(frozen=True)
