@@ -26,6 +26,9 @@ OCI_MAX_SERVICE_WORKERS=6
 OCI_MAX_LIMIT_WORKERS=10
 LIP_ENABLE_NOTIFICATIONS=true
 LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
+GRAFANA_ROOT_URL=http://<vm-ip>/grafana/
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=<long-random-password>
 ```
 
 ## Start
@@ -35,6 +38,10 @@ docker compose up -d --build
 ```
 
 Open `http://<vm-ip>`.
+
+Open the provisioned Grafana dashboard at `http://<vm-ip>/grafana/`. Anonymous users receive the
+Viewer role. Use the configured administrator account only for datasource troubleshooting or dashboard
+development; the version-controlled dashboard is read-only in the UI.
 
 For production, place OCI Load Balancer or NGINX TLS termination in front of the frontend container and restrict inbound access.
 
@@ -53,12 +60,14 @@ Encrypt the bucket, apply lifecycle retention, and test restore quarterly.
 
 - API liveness: `/healthz`
 - API readiness: `/readyz`
-- Prometheus metrics: `/metrics`
+- Prometheus exporter metrics: `/metrics`
+- Grafana: `/grafana/`
 - Frontend: `/`
 
 ## Prometheus and Grafana
 
-Add the VM as a Prometheus scrape target:
+The included Prometheus service already scrapes `api:8000/metrics` over the private Compose network.
+For an external Prometheus deployment, add the VM as a scrape target:
 
 ```yaml
 scrape_configs:
@@ -80,9 +89,21 @@ sum by (severity) (oci_lip_alerts_open)
 Restrict `/metrics` to the Prometheus network at the NSG, load balancer, or reverse proxy when the
 application is not intended to expose tenancy metadata publicly.
 
+The bundled Prometheus service has no host port and persists data in `prometheus-data`. Its retention
+is bounded to 30 days and 5 GB. Grafana persists its local database in `grafana-data`.
+
+Validate monitoring configuration before deployment:
+
+```bash
+docker compose run --rm --no-deps prometheus promtool check config /etc/prometheus/prometheus.yml
+docker compose config --quiet
+```
+
 ## Operations
 
 - Trigger a manual scan from the UI after first deployment.
 - Confirm the OCI Notifications email subscription when the email arrives.
 - Keep `LIP_ENABLE_NOTIFICATIONS=false` until the topic/subscriber setup is intentional.
 - Expand to all subscribed regions with `OCI_SCAN_ALL_REGIONS=true` after the default-region scan is stable.
+- Rotate `GRAFANA_ADMIN_PASSWORD` through `.env` and recreate only the Grafana container.
+- Back up both `prometheus-data` and `grafana-data` with the database backup workflow when dashboard history is operationally important.

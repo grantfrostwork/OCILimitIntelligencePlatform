@@ -16,6 +16,7 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Direct OCI Python SDK integration with instance-principal authentication, retries, and pagination.
 - Bounded parallel collection for service values and resource availability.
 - Prometheus metrics for every persisted limit plus scanner and alert health.
+- Self-hosted Prometheus and Grafana with a provisioned OCI limit operations dashboard.
 - Docker Compose deployment with PostgreSQL, API, worker, and frontend services.
 
 ## Quick Start
@@ -93,6 +94,23 @@ not contact OCI during a scrape. Useful series include:
 - `oci_lip_limit_collection_status`
 - `oci_lip_scan_last_success_timestamp_seconds`
 - `oci_lip_alerts_open`
+
+## Grafana Dashboard
+
+The Docker Compose deployment includes an internal Prometheus server and Grafana Enterprise. Grafana
+is exposed through the existing frontend proxy at `http://<vm-ip>/grafana/`; Prometheus is not exposed
+on a host port.
+
+The provisioned **OCI Limit Intelligence Platform - Operations** dashboard includes:
+
+- Region, service, scope, availability-domain, and collection-status filters.
+- Tenancy risk posture, peak utilization, near-capacity, at-capacity, scan-age, and exporter-health KPIs.
+- Highest-utilization limits, per-service risk concentration, historical utilization, and collection health.
+- Scan duration, application alert counts, and Prometheus alert state.
+
+Prometheus retains up to 30 days or 5 GB of samples. Grafana and Prometheus both use persistent Docker
+volumes. Anonymous access is read-only; administrator access requires `GRAFANA_ADMIN_PASSWORD` in
+the deployment `.env` file.
 
 Local development uses `DEFAULT` profile by default.
 

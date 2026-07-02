@@ -5,6 +5,7 @@ import {
   ArrowUpAZ,
   Bell,
   Download,
+  ExternalLink,
   FileSearch,
   Filter,
   Play,
@@ -288,6 +289,10 @@ export default function App() {
           <p>Service limits, usage, trends, alerts, and BOM readiness for OCI operations.</p>
         </div>
         <div className="topbar-actions">
+          <a className="button secondary" href="/grafana/" target="_blank" rel="noreferrer">
+            <ExternalLink size={16} />
+            Grafana
+          </a>
           <button className="button secondary" onClick={() => refresh()} disabled={loading}>
             <RefreshCw size={16} />
             Refresh

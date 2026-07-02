@@ -1,0 +1,48 @@
+groups:
+  - name: oci-lip-capacity
+    interval: 60s
+    rules:
+      - alert: OciLipLimitCritical
+        expr: oci_lip_limit_usage_percent >= on() group_left oci_lip_critical_threshold_percent
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OCI limit at critical utilization"
+          description: "{{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }} is {{ $value | printf \"%.1f\" }}% used."
+
+      - alert: OciLipLimitWarning
+        expr: (oci_lip_limit_usage_percent >= on() group_left oci_lip_warning_threshold_percent) and (oci_lip_limit_usage_percent < on() group_left oci_lip_critical_threshold_percent)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OCI limit approaching capacity"
+          description: "{{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }} is {{ $value | printf \"%.1f\" }}% used."
+
+      - alert: OciLipCollectionFailed
+        expr: oci_lip_limit_collection_status{status="failed"} == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OCI limit collection is failing"
+          description: "Collection failed for {{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }}."
+
+      - alert: OciLipScanStale
+        expr: time() - oci_lip_scan_last_success_timestamp_seconds > 7200
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OCI limit scan data is stale"
+          description: "The last successful OCI limit scan in {{ $labels.region }} completed more than two hours ago."
+
+      - alert: OciLipExporterDown
+        expr: up{job="oci-lip-api"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OCI LIP metrics exporter is unavailable"
+          description: "Prometheus has been unable to scrape the OCI LIP API for five minutes."

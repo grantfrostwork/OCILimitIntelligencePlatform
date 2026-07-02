@@ -1,0 +1,673 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(242, 73, 92, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Operational capacity, collection health, and risk dashboard for OCI Limit Intelligence Platform.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Open OCI LIP Application",
+      "tooltip": "Open the operational limit matrix and BOM analyzer",
+      "type": "link",
+      "url": "http://129.80.114.109/"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "panels": [],
+      "title": "Tenancy Risk Posture",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Highest current utilization across the selected OCI limits.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 90},
+              {"color": "red", "value": 100}
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 1},
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "instant": true,
+          "legendFormat": "Peak utilization",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Peak Usage",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Total persisted limit rows matching the dashboard filters.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"fixedColor": "blue", "mode": "fixed"},
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 1},
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\",status=~\"$collection_status\"})",
+          "instant": true,
+          "legendFormat": "Limits",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Limits Monitored",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Selected limits at or above the configured warning threshold.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 1},
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool scalar(oci_lip_warning_threshold_percent))",
+          "instant": true,
+          "legendFormat": "Warning or higher",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Near Limit",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Selected limits currently at or above 100 percent utilization.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 5},
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool 100)",
+          "instant": true,
+          "legendFormat": "At capacity",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "At Capacity",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Elapsed time since the most recent successful limit scan.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 3600},
+              {"color": "red", "value": 7200}
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 5},
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "time() - max(oci_lip_scan_last_success_timestamp_seconds{region=~\"$region\"})",
+          "instant": true,
+          "legendFormat": "Scan age",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Scan Age",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape health for the OCI LIP metrics endpoint.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"options": {"0": {"color": "red", "index": 1, "text": "DOWN"}, "1": {"color": "green", "index": 0, "text": "HEALTHY"}}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 5},
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {"editorMode": "code", "expr": "min(up{job=\"oci-lip-api\"})", "instant": true, "legendFormat": "Exporter", "range": false, "refId": "A"}
+      ],
+      "title": "Exporter Health",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
+      "id": 101,
+      "panels": [],
+      "title": "Capacity Concentration",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Maximum utilization in each OCI service. Services are sorted from highest to lowest risk.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "decimals": 1,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 90}, {"color": "red", "value": 100}]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 10, "x": 0, "y": 10},
+      "id": 7,
+      "options": {
+        "displayMode": "lcd",
+        "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false},
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sort_desc(max by (service) (oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"}))",
+          "instant": true,
+          "legendFormat": "{{service}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Peak Utilization by Service",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "The 25 highest-utilization OCI limit rows in the selected scope.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 90}, {"color": "red", "value": 100}] }},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Usage %"}, "properties": [{"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 14, "x": 10, "y": 10},
+      "id": 8,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "Usage %"}]},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "topk(25, oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Highest Utilization Limits",
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "indexByName": {"service": 0, "limit_name": 1, "Value": 2, "region": 3, "scope": 4, "availability_domain": 5}, "renameByName": {"availability_domain": "Availability Domain", "limit_name": "Limit", "region": "Region", "scope": "Scope", "service": "Service", "Value": "Usage %"}}}
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18},
+      "id": 102,
+      "panels": [],
+      "title": "Utilization and Collection Health",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus history for the 12 highest-utilization limits in the selected scope.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "gradientMode": "opacity", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 4, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "line"}},
+          "decimals": 1,
+          "mappings": [],
+          "max": 110,
+          "min": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 90}, {"color": "red", "value": 100}]},
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 16, "x": 0, "y": 19},
+      "id": 9,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "topk(12, oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "legendFormat": "{{service}} / {{limit_name}} · {{availability_domain}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Limit Utilization History",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Current distribution of successful, unsupported, failed, and unknown collections.",
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "mappings": [], "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 8, "x": 16, "y": 19},
+      "id": 10,
+      "options": {
+        "displayLabels": ["name", "percent", "value"],
+        "legend": {"displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"]},
+        "pieType": "donut",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "tooltip": {"hideZeros": false, "mode": "single", "sort": "none"}
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (status) (oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\",status=~\"$collection_status\"})",
+          "instant": true,
+          "legendFormat": "{{status}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Collection Status",
+      "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "id": 103,
+      "panels": [],
+      "title": "Risk Inventory",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Current utilization inventory. Use the dashboard filters to narrow the table by region, service, scope, or availability domain.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 90}, {"color": "red", "value": 100}]}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Usage %"}, "properties": [{"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}, {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 14, "x": 0, "y": 29},
+      "id": 11,
+      "options": {"cellHeight": "sm", "footer": {"countRows": true, "fields": "", "reducer": ["count"], "show": true}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "Usage %"}]},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "topk(100, oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Limit Utilization Inventory",
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "indexByName": {"service": 0, "limit_name": 1, "Value": 2, "region": 3, "scope": 4, "availability_domain": 5}, "renameByName": {"availability_domain": "Availability Domain", "limit_name": "Limit", "region": "Region", "scope": "Scope", "service": "Service", "Value": "Usage %"}}}
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Count of limits at or above the configured warning threshold, grouped by OCI service.",
+      "fieldConfig": {
+        "defaults": {"color": {"fixedColor": "orange", "mode": "fixed"}, "custom": {"axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "fillOpacity": 80, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineWidth": 1, "scaleDistribution": {"type": "linear"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 0, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 10, "x": 14, "y": 29},
+      "id": 12,
+      "options": {"barRadius": 0, "barWidth": 0.75, "fullHighlight": false, "groupWidth": 0.7, "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "orientation": "horizontal", "showValue": "always", "stacking": "none", "tooltip": {"hideZeros": false, "mode": "single", "sort": "none"}, "xTickLabelRotation": 0, "xTickLabelSpacing": 0},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sort_desc(sum by (service) (oci_lip_limit_usage_percent{region=~\"$region\",service=~\"$service\",scope=~\"$scope\",availability_domain=~\"$availability_domain\"} >= bool scalar(oci_lip_warning_threshold_percent)))",
+          "instant": true,
+          "legendFormat": "{{service}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Limits Near Capacity by Service",
+      "type": "barchart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 38},
+      "id": 104,
+      "panels": [],
+      "title": "Platform Operations",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Duration of completed OCI limit scans by region and outcome.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 18, "gradientMode": "opacity", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "auto", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "s"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 9, "x": 0, "y": 39},
+      "id": 13,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {"editorMode": "code", "expr": "oci_lip_scan_last_duration_seconds{region=~\"$region\"}", "legendFormat": "{{region}} · {{status}}", "range": true, "refId": "A"}
+      ],
+      "title": "Scan Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Open application alerts grouped by severity.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "decimals": 0, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}, "unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "critical"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "warning"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "info"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 7, "x": 9, "y": 39},
+      "id": 14,
+      "options": {"displayMode": "gradient", "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {"editorMode": "code", "expr": "sum by (severity) (oci_lip_alerts_open)", "instant": true, "legendFormat": "{{severity}}", "range": false, "refId": "A"}
+      ],
+      "title": "Open LIP Alerts",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus rule state for OCI LIP capacity, freshness, collection, and exporter alerts.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"},
+        "overrides": [{"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}]}]
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 39},
+      "id": 15,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {"editorMode": "code", "expr": "ALERTS{alertname=~\"OciLip.*\"}", "format": "table", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}
+      ],
+      "title": "Prometheus Alert State",
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"alertname": "Alert", "alertstate": "State", "availability_domain": "Availability Domain", "limit_name": "Limit", "region": "Region", "service": "Service", "severity": "Severity"}}}],
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": ["OCI", "limits", "capacity", "operations"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(oci_lip_limit_collection_status, region)",
+        "description": "OCI region",
+        "includeAll": true,
+        "label": "Region",
+        "multi": true,
+        "name": "region",
+        "options": [],
+        "query": {"query": "label_values(oci_lip_limit_collection_status, region)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(oci_lip_limit_collection_status{region=~\"$region\"}, service)",
+        "description": "OCI service",
+        "includeAll": true,
+        "label": "Service",
+        "multi": true,
+        "name": "service",
+        "options": [],
+        "query": {"query": "label_values(oci_lip_limit_collection_status{region=~\"$region\"}, service)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\"}, scope)",
+        "description": "Global, regional, or availability-domain scope",
+        "includeAll": true,
+        "label": "Scope",
+        "multi": true,
+        "name": "scope",
+        "options": [],
+        "query": {"query": "label_values(oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\"}, scope)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\",scope=~\"$scope\"}, availability_domain)",
+        "description": "Availability domain where applicable",
+        "includeAll": true,
+        "label": "Availability Domain",
+        "multi": true,
+        "name": "availability_domain",
+        "options": [],
+        "query": {"query": "label_values(oci_lip_limit_collection_status{region=~\"$region\",service=~\"$service\",scope=~\"$scope\"}, availability_domain)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(oci_lip_limit_collection_status, status)",
+        "description": "Latest collection outcome",
+        "includeAll": true,
+        "label": "Collection Status",
+        "multi": true,
+        "name": "collection_status",
+        "options": [],
+        "query": {"query": "label_values(oci_lip_limit_collection_status, status)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {"refresh_intervals": ["30s", "1m", "5m", "15m", "30m", "1h"]},
+  "timezone": "browser",
+  "title": "OCI Limit Intelligence Platform - Operations",
+  "uid": "oci-lip-operations",
+  "version": 1,
+  "weekStart": ""
+}

@@ -10,6 +10,8 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 - PostgreSQL for normalized current state, historical snapshots, alerts, audit logs, and BOM analysis.
 - OCI Python SDK clients for Limits, Identity, and Notifications.
 - Prometheus exposition endpoint backed by persisted limit state.
+- Internal Prometheus time-series storage and rule evaluation.
+- Grafana Enterprise with provisioned datasource and dashboard definitions.
 - OCI Notifications for email alert delivery.
 
 ## Data Flow
@@ -63,6 +65,15 @@ collection and are not stored as numeric limits.
 region, service, limit name, scope, and availability domain. The exporter publishes allowed, used,
 available, usage percent, collection status, collection timestamp, scan status/duration/progress, and
 open-alert metrics. This stable label model is easier to query than dynamically generated metric names.
+
+Prometheus scrapes the API over the private Compose network every 60 seconds and retains no more than
+30 days or 5 GB of samples. It is intentionally not published on a host port. Grafana queries Prometheus
+over that same network and is reverse-proxied by the frontend NGINX container under `/grafana/`.
+
+Dashboard and datasource provisioning are stored under `deploy/grafana`, while scrape and rule files
+are stored under `deploy/prometheus`. This keeps the operational view reproducible and reviewable.
+Grafana uses a persistent named volume for its database, but the provisioned dashboard remains the
+source of truth after container replacement.
 
 ## Trend Method
 
