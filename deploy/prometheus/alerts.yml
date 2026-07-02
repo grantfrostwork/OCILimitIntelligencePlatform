@@ -30,16 +30,16 @@ groups:
           description: "Collection failed for {{ $labels.service }}/{{ $labels.limit_name }} in {{ $labels.region }}."
 
       - alert: OciLipScanStale
-        expr: time() - oci_lip_scan_last_success_timestamp_seconds > 7200
+        expr: (time() - oci_lip_scan_last_success_timestamp_seconds > scalar(oci_lip_scan_schedule_interval_seconds) + 900) and on() (oci_lip_scan_schedule_enabled == 1)
         for: 15m
         labels:
           severity: critical
         annotations:
           summary: "OCI limit scan data is stale"
-          description: "The last successful OCI limit scan in {{ $labels.region }} completed more than two hours ago."
+          description: "The last successful OCI limit scan in {{ $labels.region }} is later than its configured schedule plus the grace period."
 
       - alert: OciLipExporterDown
-        expr: up{job="oci-lip-api"} == 0
+        expr: up{job="oci-lip-api-health"} == 0
         for: 5m
         labels:
           severity: critical

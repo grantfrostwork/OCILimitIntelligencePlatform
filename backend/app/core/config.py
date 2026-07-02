@@ -39,9 +39,11 @@ class Settings(BaseSettings):
     trend_alert_window_days: int = 14
     trend_min_points: int = 4
 
-    lip_enable_scheduler: bool = False
-    lip_scan_interval_minutes: int = 60
+    lip_scan_interval_minutes: int = 240
     lip_worker_poll_seconds: int = 2
+    lip_prometheus_otlp_endpoint: str | None = None
+    lip_metrics_publish_max_attempts: int = 3
+    lip_metrics_publish_timeout_seconds: int = 30
     lip_enable_notifications: bool = False
     lip_notification_topic_name: str = "oci-lip-limit-alerts"
     lip_notification_compartment_ocid: str | None = None

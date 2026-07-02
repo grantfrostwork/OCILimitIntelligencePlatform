@@ -43,6 +43,9 @@ class ScanRun(Base):
     api_concurrency_wait_seconds: Mapped[float] = mapped_column(Float, default=0)
     api_retry_sleep_seconds: Mapped[float] = mapped_column(Float, default=0)
     global_limits_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_publish_status: Mapped[str] = mapped_column(String(32), default="pending")
+    metrics_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metrics_publish_error: Mapped[str | None] = mapped_column(Text)
     error_summary: Mapped[str | None] = mapped_column(Text)
 
     snapshots: Mapped[list["LimitSnapshot"]] = relationship(back_populates="scan_run")
@@ -96,6 +99,17 @@ class ScanRequest(Base):
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
     last_scan_run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     error_summary: Mapped[str | None] = mapped_column(Text)
+
+
+class ScanSchedule(Base):
+    __tablename__ = "scan_schedule"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="default")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer, default=240)
+    next_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_enqueued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class OciService(Base):

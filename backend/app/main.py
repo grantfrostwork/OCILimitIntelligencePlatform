@@ -2,21 +2,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import bom, health, limits
 from app.core.config import get_settings
-from app.core.database import SessionLocal, init_db
-from app.services.scan_queue import enqueue_scan_requests
-
-
-def run_scheduled_scan() -> None:
-    settings = get_settings()
-    with SessionLocal() as db:
-        enqueue_scan_requests(db, settings, trigger="scheduled")
-        db.commit()
+from app.core.database import init_db
 
 
 @asynccontextmanager
@@ -24,24 +15,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     init_db()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    scheduler: BackgroundScheduler | None = None
-    if settings.lip_enable_scheduler:
-        scheduler = BackgroundScheduler(timezone="UTC")
-        scheduler.add_job(
-            run_scheduled_scan,
-            trigger="interval",
-            minutes=settings.lip_scan_interval_minutes,
-            id="oci-limit-scan",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
-        scheduler.start()
-    try:
-        yield
-    finally:
-        if scheduler:
-            scheduler.shutdown(wait=False)
+    yield
 
 
 def create_app() -> FastAPI:

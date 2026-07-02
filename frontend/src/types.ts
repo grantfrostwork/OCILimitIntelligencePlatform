@@ -25,6 +25,18 @@ export interface ScanRun {
   global_limits_skipped: number;
   progress_percent: number;
   error_summary: string | null;
+  metrics_publish_status: string;
+  metrics_published_at: string | null;
+  metrics_publish_error: string | null;
+}
+
+export interface ScanSchedule {
+  is_enabled: boolean;
+  interval_minutes: number;
+  next_scan_at: string | null;
+  last_enqueued_at: string | null;
+  allowed_intervals: number[];
+  updated_at: string;
 }
 
 export interface MonitoredRegion {

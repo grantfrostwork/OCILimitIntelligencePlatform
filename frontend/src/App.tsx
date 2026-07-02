@@ -4,6 +4,9 @@ import {
   ArrowDownAZ,
   ArrowUpAZ,
   Bell,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
   Download,
   ExternalLink,
   FileSearch,
@@ -35,9 +38,11 @@ import {
   getDashboard,
   getLimits,
   getMonitoredRegions,
+  getScanSchedule,
   getScanRuns,
   getServices,
   saveRegionAllowlist,
+  saveScanSchedule,
   triggerScan,
   triggerRegionScan,
   uploadBom,
@@ -50,33 +55,17 @@ import type {
   MonitoredRegion,
   ScanEnqueueResult,
   ScanRun,
+  ScanSchedule,
 } from "./types";
 
 const PAGE_SIZE = 30;
-const AUTO_REFRESH_OPTIONS = [
-  { label: "5 sec", value: 5_000 },
-  { label: "15 sec", value: 15_000 },
-  { label: "30 sec", value: 30_000 },
-  { label: "1 min", value: 60_000 },
-  { label: "5 min", value: 300_000 },
+const SCAN_INTERVAL_OPTIONS = [
+  { label: "10m", value: 10 },
+  { label: "30m", value: 30 },
+  { label: "4hr", value: 240 },
+  { label: "24hr", value: 1_440 },
+  { label: "48hr", value: 2_880 },
 ];
-
-function storedAutoRefreshEnabled() {
-  try {
-    return window.localStorage.getItem("lip:autoRefreshEnabled") === "true";
-  } catch {
-    return false;
-  }
-}
-
-function storedAutoRefreshInterval() {
-  try {
-    const stored = Number(window.localStorage.getItem("lip:autoRefreshIntervalMs"));
-    return AUTO_REFRESH_OPTIONS.some((option) => option.value === stored) ? stored : 15_000;
-  } catch {
-    return 15_000;
-  }
-}
 
 function fmtNumber(value: number | null | undefined) {
   if (value === null || value === undefined) return "n/a";
@@ -168,6 +157,7 @@ export default function App() {
   const [totalLimits, setTotalLimits] = useState(0);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [scanRuns, setScanRuns] = useState<ScanRun[]>([]);
+  const [scanSchedule, setScanSchedule] = useState<ScanSchedule | null>(null);
   const [monitoredRegions, setMonitoredRegions] = useState<MonitoredRegion[]>([]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [services, setServices] = useState<string[]>([]);
@@ -186,9 +176,9 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [savingRegions, setSavingRegions] = useState(false);
   const [discoveringRegions, setDiscoveringRegions] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [regionsExpanded, setRegionsExpanded] = useState(false);
   const [error, setError] = useState("");
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedAutoRefreshEnabled);
-  const [autoRefreshIntervalMs, setAutoRefreshIntervalMs] = useState(storedAutoRefreshInterval);
   const regionDraftDirty = useRef(false);
 
   const queryParams = useMemo(
@@ -222,13 +212,14 @@ export default function App() {
     if (showSpinner) setLoading(true);
     setError("");
     try {
-      const [dashboardData, limitData, alertData, scanData, serviceData, regionData] = await Promise.all([
+      const [dashboardData, limitData, alertData, scanData, serviceData, regionData, scheduleData] = await Promise.all([
         getDashboard(),
         getLimits(queryParams),
         getAlerts(),
         getScanRuns(),
         getServices(),
         getMonitoredRegions(),
+        getScanSchedule(),
       ]);
       setDashboard(dashboardData);
       setLimits(limitData.items);
@@ -238,6 +229,7 @@ export default function App() {
       setServices(serviceData.services);
       setRegions(serviceData.regions);
       setMonitoredRegions(regionData);
+      setScanSchedule(scheduleData);
       if (!regionDraftDirty.current) {
         setSelectedRegions(regionData.filter((item) => item.is_enabled).map((item) => item.region_name));
       }
@@ -251,23 +243,6 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [queryParams]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("lip:autoRefreshEnabled", String(autoRefreshEnabled));
-      window.localStorage.setItem("lip:autoRefreshIntervalMs", String(autoRefreshIntervalMs));
-    } catch {
-      // Local storage can be disabled; the controls still work for the current session.
-    }
-  }, [autoRefreshEnabled, autoRefreshIntervalMs]);
-
-  useEffect(() => {
-    if (!autoRefreshEnabled || scanRunning) return;
-    const timer = window.setInterval(() => {
-      refresh(false);
-    }, autoRefreshIntervalMs);
-    return () => window.clearInterval(timer);
-  }, [autoRefreshEnabled, autoRefreshIntervalMs, queryParams, scanRunning]);
 
   useEffect(() => {
     if (!scanRunning) return;
@@ -304,6 +279,33 @@ export default function App() {
         ? current.filter((item) => item !== regionName)
         : [...current, regionName]
     );
+  }
+
+  function selectAllRegions() {
+    regionDraftDirty.current = true;
+    setSelectedRegions(
+      monitoredRegions
+        .filter((item) => item.subscription_status === "READY")
+        .map((item) => item.region_name)
+    );
+  }
+
+  async function updateScanSchedule(isEnabled: boolean, intervalMinutes: number) {
+    setSavingSchedule(true);
+    setError("");
+    try {
+      const result = await saveScanSchedule(isEnabled, intervalMinutes);
+      setScanSchedule(result);
+      setScanMessage(
+        result.is_enabled
+          ? `Automatic scans enabled every ${SCAN_INTERVAL_OPTIONS.find((item) => item.value === result.interval_minutes)?.label ?? `${result.interval_minutes}m`}.`
+          : "Automatic scans paused."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update automatic scan schedule.");
+    } finally {
+      setSavingSchedule(false);
+    }
   }
 
   async function saveRegions() {
@@ -380,9 +382,16 @@ export default function App() {
   return (
     <main>
       <header className="topbar">
-        <div>
-          <h1>OCI Limit Intelligence Platform</h1>
-          <p>Service limits, usage, trends, alerts, and BOM readiness for OCI operations.</p>
+        <div className="brand-block">
+          <img
+            className="oci-brand-lockup"
+            src="/oracle-cloud-infrastructure.png"
+            alt="Oracle Cloud Infrastructure"
+          />
+          <div className="app-identity">
+            <h1>OCI Limit Intelligence Platform</h1>
+            <p>Service limits, usage, trends, alerts, and BOM readiness for OCI operations.</p>
+          </div>
         </div>
         <div className="topbar-actions">
           <a className="button secondary" href="/grafana/" target="_blank" rel="noreferrer">
@@ -394,20 +403,28 @@ export default function App() {
             Refresh
           </button>
           <button
-            className={`button toggle ${autoRefreshEnabled ? "toggle-active" : ""}`}
-            onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+            className={`button toggle ${scanSchedule?.is_enabled ? "toggle-active" : ""}`}
+            onClick={() =>
+              updateScanSchedule(
+                !(scanSchedule?.is_enabled ?? false),
+                scanSchedule?.interval_minutes ?? 240
+              )
+            }
+            disabled={!scanSchedule || savingSchedule}
           >
             <Timer size={16} />
-            {autoRefreshEnabled ? "Auto refresh on" : "Auto refresh off"}
+            {scanSchedule?.is_enabled ? "Auto scan on" : "Auto scan off"}
           </button>
           <label className="refresh-interval">
-            <span>Interval</span>
+            <span>Scan interval</span>
             <select
-              value={autoRefreshIntervalMs}
-              disabled={!autoRefreshEnabled}
-              onChange={(event) => setAutoRefreshIntervalMs(Number(event.target.value))}
+              value={scanSchedule?.interval_minutes ?? 240}
+              disabled={!scanSchedule || !scanSchedule.is_enabled || savingSchedule}
+              onChange={(event) =>
+                updateScanSchedule(true, Number(event.target.value))
+              }
             >
-              {AUTO_REFRESH_OPTIONS.map((option) => (
+              {SCAN_INTERVAL_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -442,12 +459,12 @@ export default function App() {
             <div>
               <h2>
                 {activeScans.length > 1
-                  ? `${activeScans.length} Regional Scans`
+                  ? `${activeScans.length} regional scans`
                   : activeScans.length === 1
-                    ? "Scan In Progress"
+                    ? "Scan in progress"
                     : queuedRegionCount > 0
-                      ? `${queuedRegionCount} Regional Scan${queuedRegionCount === 1 ? "" : "s"} Queued`
-                      : "Latest Scan"}
+                      ? `${queuedRegionCount} regional scan${queuedRegionCount === 1 ? "" : "s"} queued`
+                      : "Latest scan"}
               </h2>
               <p>
                 {queuedRegionCount > 0 && activeScans.length === 0
@@ -491,40 +508,73 @@ export default function App() {
                 Attempt {latestScan.attempt} of {latestScan.max_attempts}
               </span>
             )}
+            {latestScan.metrics_publish_status && (
+              <span>
+                Metrics {stageLabel(latestScan.metrics_publish_status).toLowerCase()}
+                {latestScan.metrics_published_at
+                  ? ` ${fmtDate(latestScan.metrics_published_at)}`
+                  : ""}
+              </span>
+            )}
           </div>
         </section>
       )}
 
       <section className="region-panel">
-        <div className="panel-header region-panel-header">
+        <div className={`panel-header region-panel-header ${regionsExpanded ? "" : "collapsed"}`}>
           <div>
             <h2>
               <Globe2 size={18} />
-              Region Coverage
+              Region coverage
             </h2>
             <p>
               {selectedRegions.length} of{" "}
               {monitoredRegions.filter((item) => item.subscription_status === "READY").length} subscribed regions
-              selected for scheduled scans.
+              selected for scheduled scans
+              {scanSchedule?.is_enabled && scanSchedule.next_scan_at
+                ? ` · next scan ${fmtDate(scanSchedule.next_scan_at)}`
+                : " · automatic scans paused"}
             </p>
           </div>
-          <div className="region-toolbar">
-            <button
-              className="button secondary"
-              onClick={refreshRegionSubscriptions}
-              disabled={discoveringRegions}
-            >
-              <RefreshCw size={16} />
-              {discoveringRegions ? "Discovering" : "Refresh subscriptions"}
-            </button>
-            <button className="button primary" onClick={saveRegions} disabled={savingRegions}>
-              <Save size={16} />
-              {savingRegions ? "Saving" : "Save allowlist"}
-            </button>
-          </div>
+          <button
+            className="button secondary icon-button region-collapse-button"
+            onClick={() => setRegionsExpanded(!regionsExpanded)}
+            aria-expanded={regionsExpanded}
+            aria-label={regionsExpanded ? "Collapse region coverage" : "Expand region coverage"}
+            title={regionsExpanded ? "Collapse region coverage" : "Expand region coverage"}
+          >
+            {regionsExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
         </div>
-        {monitoredRegions.length ? (
-          <div className="region-table-shell">
+        {regionsExpanded && (
+          <div className="region-panel-body">
+            <div className="region-toolbar">
+              <button
+                className="button secondary"
+                onClick={selectAllRegions}
+                disabled={
+                  monitoredRegions.filter((item) => item.subscription_status === "READY").length ===
+                  selectedRegions.length
+                }
+              >
+                <CheckSquare size={16} />
+                Select all
+              </button>
+              <button
+                className="button secondary"
+                onClick={refreshRegionSubscriptions}
+                disabled={discoveringRegions}
+              >
+                <RefreshCw size={16} />
+                {discoveringRegions ? "Discovering" : "Refresh subscriptions"}
+              </button>
+              <button className="button primary" onClick={saveRegions} disabled={savingRegions}>
+                <Save size={16} />
+                {savingRegions ? "Saving" : "Save allowlist"}
+              </button>
+            </div>
+            {monitoredRegions.length ? (
+              <div className="region-table-shell">
             <table className="region-table">
               <thead>
                 <tr>
@@ -624,16 +674,18 @@ export default function App() {
                 })}
               </tbody>
             </table>
+              </div>
+            ) : (
+              <EmptyState title="No regions discovered" detail="Refresh subscriptions to load READY OCI regions." />
+            )}
           </div>
-        ) : (
-          <EmptyState title="No regions discovered" detail="Refresh subscriptions to load READY OCI regions." />
         )}
       </section>
 
       <section className="stat-grid">
         <StatCard
           icon={<Server size={20} />}
-          label="Limits Scanned"
+          label="Limits scanned"
           value={fmtNumber(dashboard?.total_limits_scanned ?? 0)}
           detail={
             dashboard?.last_scan
@@ -657,7 +709,7 @@ export default function App() {
         />
         <StatCard
           icon={<Activity size={20} />}
-          label="Open Alerts"
+          label="Open alerts"
           value={fmtNumber(alerts.length)}
           detail={latestScan ? `${latestScan.status} scan in ${latestScan.region}` : "Awaiting scan history"}
         />
@@ -667,7 +719,7 @@ export default function App() {
         <div className="panel panel-wide">
           <div className="panel-header">
             <div>
-              <h2>Limit Matrix</h2>
+              <h2>Limit matrix</h2>
               <p>{activeFilters.length ? `Filtered by ${activeFilters.join(", ")}` : "All discovered limit rows"}</p>
             </div>
             <a className="button secondary" href={exportUrl(queryParams)}>
@@ -829,7 +881,7 @@ export default function App() {
           <div className="panel">
             <div className="panel-header compact">
               <div>
-                <h2>Top Usage</h2>
+                <h2>Top usage</h2>
                 <p>Highest percent used</p>
               </div>
             </div>
@@ -841,7 +893,7 @@ export default function App() {
                     <XAxis type="number" domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
                     <YAxis dataKey="name" type="category" width={132} />
                     <Tooltip />
-                    <Bar dataKey="usage" fill="#2f7f6f" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="usage" fill="#4c825c" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -875,7 +927,7 @@ export default function App() {
           <div className="panel">
             <div className="panel-header compact">
               <div>
-                <h2>Services Near Capacity</h2>
+                <h2>Services near capacity</h2>
                 <p>Grouped by service</p>
               </div>
             </div>
@@ -899,7 +951,7 @@ export default function App() {
         <div className="panel">
           <div className="panel-header">
             <div>
-              <h2>BOM Analyzer</h2>
+              <h2>BOM analyzer</h2>
               <p>Upload planned OCI resources and compare them to scanned limits.</p>
             </div>
             <label className="button primary file-button">
@@ -947,7 +999,7 @@ export default function App() {
         <div className="panel">
           <div className="panel-header">
             <div>
-              <h2>Recent Trend Changes</h2>
+              <h2>Recent trend changes</h2>
               <p>Projected movement toward configured threshold.</p>
             </div>
           </div>
@@ -968,7 +1020,7 @@ export default function App() {
             ) : (
               <EmptyState
                 title="No trend projections"
-                detail="Trend data appears after several hourly snapshots are collected."
+                detail="Trend data appears after several scheduled snapshots are collected."
               />
             )}
           </div>

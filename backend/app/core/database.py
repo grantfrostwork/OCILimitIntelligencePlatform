@@ -52,6 +52,9 @@ def _ensure_scan_run_columns() -> None:
         "api_concurrency_wait_seconds": "FLOAT NOT NULL DEFAULT 0",
         "api_retry_sleep_seconds": "FLOAT NOT NULL DEFAULT 0",
         "global_limits_skipped": "INTEGER NOT NULL DEFAULT 0",
+        "metrics_publish_status": "VARCHAR(32) NOT NULL DEFAULT 'pending'",
+        "metrics_published_at": "TIMESTAMP WITH TIME ZONE",
+        "metrics_publish_error": "TEXT",
     }
 
     with engine.begin() as connection:

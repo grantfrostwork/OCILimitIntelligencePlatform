@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.database import SessionLocal
 from app.models import AuditLog, ScanRequest, ScanRun, new_id, utcnow
 from app.services.collector import LimitsCollector
+from app.services.metrics_publish import publish_batch_metrics_if_complete
 from app.services.regions import RegionService
 
 
@@ -188,6 +189,12 @@ def process_scan_request(request_id: str, settings: Settings) -> str:
                 error_summary=scan.error_summary,
             )
             db.commit()
+            publish_batch_metrics_if_complete(
+                db,
+                settings,
+                batch_id=request.batch_id,
+                completed_scan=scan,
+            )
             return status
     except Exception as exc:
         # A failure outside LimitsCollector must not leave a durable queue row running.
@@ -205,22 +212,3 @@ def process_scan_request(request_id: str, settings: Settings) -> str:
             )
             recovery_db.commit()
             return status
-
-
-def next_scheduled_scan_at(db: Session, interval_minutes: int) -> datetime:
-    latest_request = db.scalar(
-        select(ScanRequest)
-        .where(ScanRequest.trigger == "scheduled")
-        .order_by(desc(ScanRequest.requested_at))
-        .limit(1)
-    )
-    if latest_request:
-        started_at = latest_request.requested_at
-    else:
-        latest_scan = db.scalar(select(ScanRun).order_by(desc(ScanRun.started_at)).limit(1))
-        if latest_scan is None:
-            return datetime.now(UTC)
-        started_at = latest_scan.started_at
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=UTC)
-    return started_at + timedelta(minutes=interval_minutes)

@@ -9,8 +9,8 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  - job_name: oci-lip-api
-    metrics_path: /metrics
+  - job_name: oci-lip-api-health
+    metrics_path: /metrics/health
     scheme: http
     static_configs:
       - targets:

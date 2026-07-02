@@ -34,6 +34,10 @@ services:
       OCI_REGION_RETRY_MAX_SECONDS: ${OCI_REGION_RETRY_MAX_SECONDS:-300}
       LIP_ENABLE_NOTIFICATIONS: ${LIP_ENABLE_NOTIFICATIONS:-false}
       LIP_NOTIFICATION_EMAILS: ${LIP_NOTIFICATION_EMAILS:-["grant.frost@oracle.com"]}
+      LIP_SCAN_INTERVAL_MINUTES: ${LIP_SCAN_INTERVAL_MINUTES:-240}
+      LIP_PROMETHEUS_OTLP_ENDPOINT: ${LIP_PROMETHEUS_OTLP_ENDPOINT:-http://prometheus:9090/api/v1/otlp/v1/metrics}
+      LIP_METRICS_PUBLISH_MAX_ATTEMPTS: ${LIP_METRICS_PUBLISH_MAX_ATTEMPTS:-3}
+      LIP_METRICS_PUBLISH_TIMEOUT_SECONDS: ${LIP_METRICS_PUBLISH_TIMEOUT_SECONDS:-30}
       UPLOAD_DIR: /var/lib/oci-lip/uploads
     volumes:
       - uploads:/var/lib/oci-lip/uploads
@@ -64,8 +68,11 @@ services:
       OCI_REGION_SCAN_MAX_ATTEMPTS: ${OCI_REGION_SCAN_MAX_ATTEMPTS:-3}
       OCI_REGION_RETRY_BASE_SECONDS: ${OCI_REGION_RETRY_BASE_SECONDS:-30}
       OCI_REGION_RETRY_MAX_SECONDS: ${OCI_REGION_RETRY_MAX_SECONDS:-300}
-      LIP_SCAN_INTERVAL_MINUTES: ${LIP_SCAN_INTERVAL_MINUTES:-60}
+      LIP_SCAN_INTERVAL_MINUTES: ${LIP_SCAN_INTERVAL_MINUTES:-240}
       LIP_WORKER_POLL_SECONDS: ${LIP_WORKER_POLL_SECONDS:-2}
+      LIP_PROMETHEUS_OTLP_ENDPOINT: ${LIP_PROMETHEUS_OTLP_ENDPOINT:-http://prometheus:9090/api/v1/otlp/v1/metrics}
+      LIP_METRICS_PUBLISH_MAX_ATTEMPTS: ${LIP_METRICS_PUBLISH_MAX_ATTEMPTS:-3}
+      LIP_METRICS_PUBLISH_TIMEOUT_SECONDS: ${LIP_METRICS_PUBLISH_TIMEOUT_SECONDS:-30}
       LIP_ENABLE_NOTIFICATIONS: ${LIP_ENABLE_NOTIFICATIONS:-false}
       LIP_NOTIFICATION_EMAILS: ${LIP_NOTIFICATION_EMAILS:-["grant.frost@oracle.com"]}
       UPLOAD_DIR: /var/lib/oci-lip/uploads
@@ -83,6 +90,8 @@ services:
       - --storage.tsdb.retention.time=30d
       - --storage.tsdb.retention.size=5GB
       - --web.enable-lifecycle
+      - --web.enable-otlp-receiver
+      - --query.lookback-delta=30d
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro

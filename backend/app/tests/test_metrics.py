@@ -5,8 +5,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import Settings
 from app.core.database import Base
-from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun
-from app.services.metrics import render_metrics
+from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun, ScanSchedule
+from app.services.metrics import render_health_metrics, render_metrics
 
 
 def test_prometheus_metrics_export_limit_and_scan_state():
@@ -98,6 +98,13 @@ def test_prometheus_metrics_export_limit_and_scan_state():
             status="open",
         )
     )
+    db.add(
+        ScanSchedule(
+            is_enabled=True,
+            interval_minutes=240,
+            next_scan_at=now + timedelta(hours=4),
+        )
+    )
     db.commit()
 
     output = render_metrics(db, Settings()).decode()
@@ -127,3 +134,8 @@ def test_prometheus_metrics_export_limit_and_scan_state():
     assert 'oci_lip_scan_last_api_throttles{region="us-ashburn-1"} 1.0' in output
     assert 'oci_lip_region_enabled{home_region="true",region="us-ashburn-1"' in output
     assert 'oci_lip_scan_requests{region="us-ashburn-1",status="succeeded",trigger="scheduled"} 1.0' in output
+
+    health_output = render_health_metrics(db).decode()
+    assert "oci_lip_exporter_info" in health_output
+    assert "oci_lip_scan_schedule_enabled 1.0" in health_output
+    assert "oci_lip_scan_schedule_interval_seconds 14400.0" in health_output

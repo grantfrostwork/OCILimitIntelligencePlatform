@@ -28,6 +28,9 @@ class ScanRunOut(BaseModel):
     api_concurrency_wait_seconds: float
     api_retry_sleep_seconds: float
     global_limits_skipped: int
+    metrics_publish_status: str
+    metrics_published_at: datetime | None
+    metrics_publish_error: str | None
     progress_percent: float
     error_summary: str | None
 
@@ -73,6 +76,20 @@ class ScanEnqueueOut(BaseModel):
     regions: list[str]
     queued_regions: list[str]
     skipped_regions: list[str]
+
+
+class ScanScheduleUpdate(BaseModel):
+    is_enabled: bool
+    interval_minutes: int
+
+
+class ScanScheduleOut(BaseModel):
+    is_enabled: bool
+    interval_minutes: int
+    next_scan_at: datetime | None
+    last_enqueued_at: datetime | None
+    allowed_intervals: list[int]
+    updated_at: datetime
 
 
 class LimitItemOut(BaseModel):

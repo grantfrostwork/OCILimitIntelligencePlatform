@@ -30,6 +30,8 @@ OCI_REGION_STAGGER_SECONDS=15
 OCI_REGION_SCAN_MAX_ATTEMPTS=3
 OCI_REGION_RETRY_BASE_SECONDS=30
 OCI_REGION_RETRY_MAX_SECONDS=300
+LIP_SCAN_INTERVAL_MINUTES=240
+LIP_PROMETHEUS_OTLP_ENDPOINT=http://prometheus:9090/api/v1/otlp/v1/metrics
 LIP_ENABLE_NOTIFICATIONS=true
 LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
 GRAFANA_ROOT_URL=http://<vm-ip>/grafana/
@@ -49,6 +51,10 @@ On first start, LIP discovers all READY tenancy subscriptions but enables only
 `OCI_DEFAULT_REGION`. Use **Region Coverage** in the UI to select the regions that should participate
 in scheduled scans, save the allowlist, and then run a manual batch. The allowlist and regional queue
 are persisted in PostgreSQL.
+
+Automatic scans default to every four hours. Use the persistent **Auto scan** and **Scan interval**
+controls in the header to select 10 minutes, 30 minutes, 4 hours, 24 hours, or 48 hours. The setting
+is enforced by the worker even when no browser is open.
 
 Open the provisioned Grafana dashboard at `http://<vm-ip>/grafana/`. Anonymous users receive the
 Viewer role. Use the configured administrator account only for datasource troubleshooting or dashboard
@@ -81,8 +87,10 @@ Encrypt the bucket, apply lifecycle retention, and test restore quarterly.
 
 ## Prometheus and Grafana
 
-The included Prometheus service already scrapes `api:8000/metrics` over the private Compose network.
-For an external Prometheus deployment, add the VM as a scrape target:
+The included worker sends `api:8000/metrics` as an OTLP snapshot to Prometheus once after every
+regional scan batch.
+Prometheus separately scrapes `api:8000/metrics/health` every five minutes. For an external
+Prometheus deployment that does not accept the bundled OTLP publication, add the VM as a scrape target:
 
 ```yaml
 scrape_configs:

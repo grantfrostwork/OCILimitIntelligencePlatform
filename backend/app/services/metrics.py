@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun
+from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun, ScanSchedule
 
 
 LIMIT_LABELS = ["region", "service", "limit_name", "scope", "availability_domain"]
@@ -104,6 +104,19 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
 
     _render_alert_metrics(db, registry)
     _render_scan_metrics(db, registry)
+    return generate_latest(registry)
+
+
+def render_health_metrics(db: Session) -> bytes:
+    registry = CollectorRegistry()
+    info = Gauge(
+        "oci_lip_exporter_info",
+        "Static information about the OCI Limit Intelligence Platform exporter.",
+        ["oci_sdk_version"],
+        registry=registry,
+    )
+    info.labels(oci.__version__).set(1)
+    _render_schedule_metrics(db, registry)
     return generate_latest(registry)
 
 
@@ -263,6 +276,33 @@ def _render_region_metrics(db: Session, registry: CollectorRegistry) -> None:
         ).group_by(ScanRequest.region, ScanRequest.trigger, ScanRequest.status)
     ):
         requests.labels(region, trigger, status).set(count)
+
+
+def _render_schedule_metrics(db: Session, registry: CollectorRegistry) -> None:
+    enabled = Gauge(
+        "oci_lip_scan_schedule_enabled",
+        "Whether automatic OCI limit scanning is enabled.",
+        registry=registry,
+    )
+    interval = Gauge(
+        "oci_lip_scan_schedule_interval_seconds",
+        "Configured interval between automatic OCI limit scan batches.",
+        registry=registry,
+    )
+    next_scan = Gauge(
+        "oci_lip_scan_schedule_next_timestamp_seconds",
+        "Unix timestamp for the next automatic OCI limit scan batch.",
+        registry=registry,
+    )
+    schedule = db.get(ScanSchedule, "default")
+    if schedule is None:
+        enabled.set(0)
+        interval.set(0)
+        return
+    enabled.set(1 if schedule.is_enabled else 0)
+    interval.set(schedule.interval_minutes * 60)
+    if schedule.next_scan_at is not None:
+        next_scan.set(_timestamp(schedule.next_scan_at))
 
 
 def _limit_labels(item: LimitItem) -> tuple[str, str, str, str, str]:

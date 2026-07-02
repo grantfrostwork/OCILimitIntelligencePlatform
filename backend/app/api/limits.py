@@ -21,13 +21,27 @@ from app.schemas import (
     ScanEnqueueOut,
     ScanRequestOut,
     ScanRunOut,
+    ScanScheduleOut,
+    ScanScheduleUpdate,
 )
 from app.services.alerts import AlertService
 from app.services.oci_sdk import OciSdkError
 from app.services.regions import RegionService
 from app.services.scan_queue import enqueue_scan_requests
+from app.services.schedule import ALLOWED_SCAN_INTERVALS, get_or_create_schedule, update_schedule
 
 router = APIRouter(prefix="/api", tags=["limits"])
+
+
+def _schedule_out(schedule) -> ScanScheduleOut:
+    return ScanScheduleOut(
+        is_enabled=schedule.is_enabled,
+        interval_minutes=schedule.interval_minutes,
+        next_scan_at=schedule.next_scan_at,
+        last_enqueued_at=schedule.last_enqueued_at,
+        allowed_intervals=list(ALLOWED_SCAN_INTERVALS),
+        updated_at=schedule.updated_at,
+    )
 
 
 def _region_outputs(db: Session) -> list[RegionOut]:
@@ -468,6 +482,35 @@ def trigger_scan(
     settings: Settings = Depends(get_settings),
 ) -> ScanEnqueueOut:
     return _enqueue_scan_response(db, settings, [region] if region else None)
+
+
+@router.get("/scan-schedule", response_model=ScanScheduleOut)
+def scan_schedule(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ScanScheduleOut:
+    schedule = get_or_create_schedule(db, settings)
+    db.commit()
+    return _schedule_out(schedule)
+
+
+@router.put("/scan-schedule", response_model=ScanScheduleOut)
+def set_scan_schedule(
+    payload: ScanScheduleUpdate,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ScanScheduleOut:
+    try:
+        schedule = update_schedule(
+            db,
+            settings,
+            is_enabled=payload.is_enabled,
+            interval_minutes=payload.interval_minutes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return _schedule_out(schedule)
 
 
 @router.get("/scan-runs", response_model=list[ScanRunOut])

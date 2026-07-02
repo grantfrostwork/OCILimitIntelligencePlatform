@@ -6,6 +6,7 @@ import type {
   MonitoredRegion,
   ScanEnqueueResult,
   ScanRun,
+  ScanSchedule,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -62,6 +63,21 @@ export function getAlerts() {
 
 export function getScanRuns() {
   return request<ScanRun[]>("/api/scan-runs");
+}
+
+export function getScanSchedule() {
+  return request<ScanSchedule>("/api/scan-schedule");
+}
+
+export function saveScanSchedule(isEnabled: boolean, intervalMinutes: number) {
+  return request<ScanSchedule>("/api/scan-schedule", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      is_enabled: isEnabled,
+      interval_minutes: intervalMinutes,
+    }),
+  });
 }
 
 export function triggerScan(region?: string) {

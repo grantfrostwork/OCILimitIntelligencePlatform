@@ -4,7 +4,6 @@ import logging
 import signal
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
@@ -13,10 +12,10 @@ from app.services.regions import RegionService
 from app.services.scan_queue import (
     claim_due_requests,
     enqueue_scan_requests,
-    next_scheduled_scan_at,
     process_scan_request,
     recover_interrupted_requests,
 )
+from app.services.schedule import advance_schedule, get_or_create_schedule, schedule_is_due
 
 
 logging.basicConfig(
@@ -32,7 +31,7 @@ def _stop(*_args) -> None:
     shutdown = True
 
 
-def _initialize(settings) -> datetime:
+def _initialize(settings) -> None:
     with SessionLocal() as db:
         recovered = recover_interrupted_requests(db)
         try:
@@ -43,15 +42,18 @@ def _initialize(settings) -> datetime:
             )
         except OciSdkError:
             logger.exception("region subscription synchronization failed; using persisted allowlist")
-        next_scan_at = next_scheduled_scan_at(db, settings.lip_scan_interval_minutes)
+        get_or_create_schedule(db, settings)
         db.commit()
     if recovered:
         logger.warning("recovered interrupted scan requests", extra={"count": recovered})
-    return next_scan_at
 
 
-def _enqueue_scheduled_batch(settings) -> None:
+def _enqueue_scheduled_batch_if_due(settings) -> None:
     with SessionLocal() as db:
+        schedule = get_or_create_schedule(db, settings)
+        if not schedule_is_due(schedule):
+            db.commit()
+            return
         try:
             RegionService(db, settings).sync_subscriptions()
         except OciSdkError:
@@ -61,13 +63,16 @@ def _enqueue_scheduled_batch(settings) -> None:
             settings,
             trigger="scheduled",
         )
+        advance_schedule(schedule)
+        queued_regions = [item.region for item in requests]
         db.commit()
     logger.info(
         "scheduled scan batch evaluated",
         extra={
             "batch_id": batch_id,
-            "queued_regions": [item.region for item in requests],
+            "queued_regions": queued_regions,
             "skipped_regions": skipped,
+            "interval_minutes": schedule.interval_minutes,
         },
     )
 
@@ -77,7 +82,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _stop)
     settings = get_settings()
     init_db()
-    next_scan_at = _initialize(settings)
+    _initialize(settings)
     running: dict[Future[str], str] = {}
 
     with ThreadPoolExecutor(
@@ -99,10 +104,7 @@ def main() -> None:
                         extra={"request_id": request_id},
                     )
 
-            now = datetime.now(UTC)
-            if now >= next_scan_at:
-                _enqueue_scheduled_batch(settings)
-                next_scan_at = now + timedelta(minutes=settings.lip_scan_interval_minutes)
+            _enqueue_scheduled_batch_if_due(settings)
 
             available_slots = max(0, settings.oci_max_region_workers - len(running))
             if available_slots:

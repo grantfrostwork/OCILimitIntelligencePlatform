@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.services.metrics import render_metrics
+from app.services.metrics import render_health_metrics, render_metrics
 
 router = APIRouter(tags=["health"])
 
@@ -28,3 +28,8 @@ def metrics(
         content=render_metrics(db, settings),
         media_type=CONTENT_TYPE_LATEST,
     )
+
+
+@router.get("/metrics/health")
+def metrics_health(db: Session = Depends(get_db)) -> Response:
+    return Response(content=render_health_metrics(db), media_type=CONTENT_TYPE_LATEST)

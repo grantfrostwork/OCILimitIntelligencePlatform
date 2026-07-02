@@ -6,7 +6,7 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 
 - React frontend served by NGINX.
 - FastAPI backend for dashboard, limits, alert, scan, and BOM APIs.
-- Worker process with a durable regional queue, fixed scan interval, and bounded regional executor.
+- Worker process with a durable regional queue, persistent configurable schedule, and bounded regional executor.
 - PostgreSQL for normalized current state, historical snapshots, alerts, audit logs, and BOM analysis.
 - OCI Python SDK clients for Limits, Identity, and Notifications.
 - Prometheus exposition endpoint backed by persisted limit state.
@@ -25,8 +25,9 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 5. Worker calls `LimitsClient.get_resource_availability` concurrently across individual limits.
 6. Rows are normalized by service, limit, region, scope type, and availability domain.
 7. Snapshots are stored, trends are calculated, and alert rules are evaluated.
-8. UI reads dashboard aggregates, regional progress, and matrix rows from the API.
-9. BOM uploads are parsed, extracted resources are mapped to scanned limits, and recommendations are persisted.
+8. The completed regional batch publishes one timestamped OTLP metric snapshot to the bundled Prometheus service.
+9. UI reads dashboard aggregates, regional progress, and matrix rows from the API.
+10. BOM uploads are parsed, extracted resources are mapped to scanned limits, and recommendations are persisted.
 
 ## SDK Concurrency and Reliability
 
@@ -48,6 +49,10 @@ conservatively if the tenancy encounters service throttling.
 The scan request queue is stored in PostgreSQL. On worker restart, interrupted queue rows are returned
 to `queued` and interrupted scan runs are finalized as failed, so a process restart cannot leave the
 UI permanently reporting a running scan.
+
+The automatic scan schedule is also stored in PostgreSQL. Supported intervals are 10 minutes,
+30 minutes, 4 hours, 24 hours, and 48 hours. The worker evaluates that durable schedule and queues the
+current region allowlist when due; no open browser session is required.
 
 ## Scope Handling
 
@@ -91,9 +96,14 @@ region, service, limit name, scope, and availability domain. The exporter publis
 available, usage percent, collection status, collection timestamp, scan status/duration/progress, and
 open-alert metrics. This stable label model is easier to query than dynamically generated metric names.
 
-Prometheus scrapes the API over the private Compose network every five minutes and retains no more than
-30 days or 5 GB of samples. It is intentionally not published on a host port. Grafana queries Prometheus
-over that same network and is reverse-proxied by the frontend NGINX container under `/grafana/`.
+After all regional requests in a scan batch complete, the worker converts that persisted exposition
+into OTLP protobuf and sends one timestamped snapshot to Prometheus's internal receiver. The only
+periodic scrape is the small
+`/metrics/health` endpoint every five minutes; it contains exporter and schedule health, not capacity
+rows. Prometheus retains no more than 30 days or 5 GB and is not published on a host port. Grafana
+queries Prometheus over the same network and is reverse-proxied by the frontend NGINX container under
+`/grafana/`. Dashboard auto-refresh is disabled by default because capacity data changes only after a
+scan; opening or manually refreshing the dashboard retrieves the newest snapshot.
 
 Dashboard and datasource provisioning are stored under `deploy/grafana`, while scrape and rule files
 are stored under `deploy/prometheus`. This keeps the operational view reproducible and reviewable.

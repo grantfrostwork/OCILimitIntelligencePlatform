@@ -7,7 +7,7 @@ The application is designed to run on an OCI Linux VM with instance principal au
 ## Features
 
 - Persistent region allowlist populated from the tenancy's READY region subscriptions.
-- Hourly OCI service limit discovery and resource availability scans across selected regions.
+- Persistent automatic scan schedule with 10-minute, 30-minute, 4-hour, 24-hour, and 48-hour intervals.
 - Service, region, scope, and limit-level normalization.
 - Warning and critical threshold evaluation.
 - Historical snapshots and simple linear trend projections.
@@ -17,7 +17,7 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Direct OCI Python SDK integration with instance-principal authentication, retries, and pagination.
 - Bounded regional, service-value, and resource-availability concurrency with staggered starts.
 - Exponential backoff with jitter, regional retries, and OCI throttling telemetry.
-- Prometheus metrics for every persisted limit plus scanner and alert health.
+- Event-driven Prometheus snapshots after each completed scan batch plus a lightweight five-minute health scrape.
 - Self-hosted Prometheus and Grafana with a provisioned OCI limit operations dashboard.
 - Docker Compose deployment with PostgreSQL, API, worker, and frontend services.
 
@@ -86,6 +86,11 @@ calls and resource-availability calls are parallelized with `OCI_MAX_SERVICE_WOR
 **Region Coverage** section of the UI. A new installation enables only `OCI_DEFAULT_REGION`; an
 operator must deliberately select and save additional READY regions.
 
+Automatic scans are enabled by default with a four-hour interval. The **Auto scan** toggle and
+**Scan interval** selector in the web application update a PostgreSQL-backed schedule, so the setting
+survives browser and application restarts. The worker, rather than the browser, enqueues the regional
+batch when the schedule becomes due. Manual scans do not reset the next scheduled run.
+
 The recommended enterprise defaults are:
 
 ```bash
@@ -108,8 +113,12 @@ region for those scopes. Region and availability-domain limits remain separate p
 
 ## Prometheus
 
-Prometheus can scrape `http://<vm-ip>/metrics`. The endpoint exports persisted limit state and does
-not contact OCI during a scrape. Useful series include:
+The bundled worker publishes one complete, timestamped metric snapshot to Prometheus over OTLP after
+all regions in a scan batch reach a terminal state. Prometheus does not repeatedly scrape unchanged
+capacity data. A separate
+five-minute scrape of `/metrics/health` records exporter availability and scan schedule state only.
+`GET /metrics` remains available for external Prometheus installations and exports persisted state
+without contacting OCI. Useful series include:
 
 - `oci_lip_limit_allowed`
 - `oci_lip_limit_used`
@@ -138,9 +147,20 @@ The provisioned **OCI Limit Intelligence Platform - Operations** dashboard inclu
 - Sorted OCI-reported Compute usage, including usage-only rows whose allowed value is `Dynamic`.
 - Scan duration, application alert counts, and Prometheus alert state.
 
-Prometheus scrapes every five minutes and retains up to 30 days or 5 GB of samples. Grafana and Prometheus both use persistent Docker
-volumes. Anonymous access is read-only; administrator access requires `GRAFANA_ADMIN_PASSWORD` in
-the deployment `.env` file.
+Capacity series change only when a scan publishes a new snapshot. The provisioned Grafana dashboard
+does not auto-refresh by default; it queries Prometheus when opened or manually refreshed, avoiding
+repeated requests for identical data. Prometheus still checks API health every five minutes and
+retains up to 30 days or 5 GB of samples. Grafana and Prometheus both use persistent Docker volumes.
+Anonymous access is read-only; administrator access requires `GRAFANA_ADMIN_PASSWORD` in the
+deployment `.env` file.
+
+## Oracle Branding
+
+The web UI uses the OCI product lockup, Oracle's Pine product palette, Oracle Red as a restrained
+accent, and Oracle Sans as the preferred typeface with Arial/Helvetica fallbacks. Oracle Sans font
+files are not redistributed in this repository. Oracle trademarks and product lockups require Oracle
+authorization; customer or third-party deployments must confirm their right to use the bundled
+branding asset or replace it with an authorized customer mark.
 
 Local development uses `DEFAULT` profile by default.
 
