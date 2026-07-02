@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import logging
 import signal
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-
-from sqlalchemy import desc, select
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
-from app.models import ScanRun
-from app.services.collector import LimitsCollector
+from app.services.oci_sdk import OciSdkError
+from app.services.regions import RegionService
+from app.services.scan_queue import (
+    claim_due_requests,
+    enqueue_scan_requests,
+    next_scheduled_scan_at,
+    process_scan_request,
+    recover_interrupted_requests,
+)
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("oci_lip.worker")
 shutdown = False
 
 
@@ -20,22 +32,44 @@ def _stop(*_args) -> None:
     shutdown = True
 
 
-def _seconds_until_next_scan(db, interval_minutes: int) -> int:
-    last_scan = db.scalar(select(ScanRun).order_by(desc(ScanRun.started_at)).limit(1))
-    if not last_scan:
-        return 0
-    started_at = last_scan.started_at
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=UTC)
-    next_scan_at = started_at + timedelta(minutes=interval_minutes)
-    return max(0, int((next_scan_at - datetime.now(UTC)).total_seconds()))
+def _initialize(settings) -> datetime:
+    with SessionLocal() as db:
+        recovered = recover_interrupted_requests(db)
+        try:
+            regions = RegionService(db, settings).sync_subscriptions()
+            logger.info(
+                "region subscriptions synchronized",
+                extra={"ready_regions": sum(item.subscription_status == "READY" for item in regions)},
+            )
+        except OciSdkError:
+            logger.exception("region subscription synchronization failed; using persisted allowlist")
+        next_scan_at = next_scheduled_scan_at(db, settings.lip_scan_interval_minutes)
+        db.commit()
+    if recovered:
+        logger.warning("recovered interrupted scan requests", extra={"count": recovered})
+    return next_scan_at
 
 
-def _sleep_interruptibly(seconds: int) -> None:
-    for _ in range(seconds):
-        if shutdown:
-            break
-        time.sleep(1)
+def _enqueue_scheduled_batch(settings) -> None:
+    with SessionLocal() as db:
+        try:
+            RegionService(db, settings).sync_subscriptions()
+        except OciSdkError:
+            logger.exception("region subscription refresh failed; using persisted allowlist")
+        batch_id, requests, skipped = enqueue_scan_requests(
+            db,
+            settings,
+            trigger="scheduled",
+        )
+        db.commit()
+    logger.info(
+        "scheduled scan batch evaluated",
+        extra={
+            "batch_id": batch_id,
+            "queued_regions": [item.region for item in requests],
+            "skipped_regions": skipped,
+        },
+    )
 
 
 def main() -> None:
@@ -43,15 +77,43 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _stop)
     settings = get_settings()
     init_db()
-    while not shutdown:
-        with SessionLocal() as db:
-            wait_seconds = _seconds_until_next_scan(db, settings.lip_scan_interval_minutes)
-        if wait_seconds:
-            _sleep_interruptibly(wait_seconds)
-            continue
-        with SessionLocal() as db:
-            LimitsCollector(db, settings).run_all_configured_regions()
-        _sleep_interruptibly(settings.lip_scan_interval_minutes * 60)
+    next_scan_at = _initialize(settings)
+    running: dict[Future[str], str] = {}
+
+    with ThreadPoolExecutor(
+        max_workers=max(1, settings.oci_max_region_workers),
+        thread_name_prefix="oci-regions",
+    ) as executor:
+        while not shutdown:
+            for future in [item for item in running if item.done()]:
+                request_id = running.pop(future)
+                try:
+                    status = future.result()
+                    logger.info(
+                        "regional scan attempt completed",
+                        extra={"request_id": request_id, "status": status},
+                    )
+                except Exception:
+                    logger.exception(
+                        "regional scan worker failed unexpectedly",
+                        extra={"request_id": request_id},
+                    )
+
+            now = datetime.now(UTC)
+            if now >= next_scan_at:
+                _enqueue_scheduled_batch(settings)
+                next_scan_at = now + timedelta(minutes=settings.lip_scan_interval_minutes)
+
+            available_slots = max(0, settings.oci_max_region_workers - len(running))
+            if available_slots:
+                with SessionLocal() as db:
+                    requests = claim_due_requests(db, available_slots)
+                    request_ids = [item.id for item in requests]
+                    db.commit()
+                for request_id in request_ids:
+                    running[executor.submit(process_scan_request, request_id, settings)] = request_id
+
+            time.sleep(max(1, settings.lip_worker_poll_seconds))
 
 
 if __name__ == "__main__":

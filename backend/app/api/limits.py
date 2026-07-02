@@ -4,19 +4,103 @@ import csv
 from io import StringIO
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, desc, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.models import Alert, LimitItem, ScanRun, TrendPrediction
-from app.schemas import AlertOut, DashboardOut, LimitItemOut, ScanRunOut
+from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun, TrendPrediction
+from app.schemas import (
+    AlertOut,
+    DashboardOut,
+    LimitItemOut,
+    RegionAllowlistUpdate,
+    RegionOut,
+    ScanEnqueueOut,
+    ScanRequestOut,
+    ScanRunOut,
+)
 from app.services.alerts import AlertService
-from app.services.collector import LimitsCollector
+from app.services.oci_sdk import OciSdkError
+from app.services.regions import RegionService
+from app.services.scan_queue import enqueue_scan_requests
 
 router = APIRouter(prefix="/api", tags=["limits"])
+
+
+def _region_outputs(db: Session) -> list[RegionOut]:
+    regions = list(
+        db.scalars(
+            select(MonitoredRegion).order_by(
+                MonitoredRegion.is_enabled.desc(),
+                MonitoredRegion.stagger_order,
+                MonitoredRegion.region_name,
+            )
+        )
+    )
+    output: list[RegionOut] = []
+    for item in regions:
+        latest_scan = db.scalar(
+            select(ScanRun)
+            .where(ScanRun.region == item.region_name)
+            .order_by(desc(ScanRun.started_at))
+            .limit(1)
+        )
+        latest_request = db.scalar(
+            select(ScanRequest)
+            .where(ScanRequest.region == item.region_name)
+            .order_by(desc(ScanRequest.requested_at))
+            .limit(1)
+        )
+        output.append(
+            RegionOut(
+                region_name=item.region_name,
+                region_key=item.region_key,
+                subscription_status=item.subscription_status,
+                is_home_region=item.is_home_region,
+                is_enabled=item.is_enabled,
+                stagger_order=item.stagger_order,
+                latest_scan=(
+                    ScanRunOut.model_validate(latest_scan) if latest_scan else None
+                ),
+                request_status=latest_request.status if latest_request else None,
+                request_id=latest_request.id if latest_request else None,
+                next_attempt_at=(
+                    latest_request.not_before
+                    if latest_request and latest_request.status == "queued"
+                    else None
+                ),
+            )
+        )
+    return output
+
+
+def _enqueue_scan_response(
+    db: Session,
+    settings: Settings,
+    region_names: list[str] | None,
+) -> ScanEnqueueOut:
+    try:
+        batch_id, requests, skipped = enqueue_scan_requests(
+            db,
+            settings,
+            trigger="manual",
+            region_names=region_names,
+        )
+    except (OciSdkError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    queued = [item.region for item in requests]
+    requested = list(dict.fromkeys([*queued, *skipped]))
+    return ScanEnqueueOut(
+        status="queued" if queued else "already_queued",
+        batch_id=batch_id,
+        regions=requested,
+        queued_regions=queued,
+        skipped_regions=skipped,
+    )
 
 
 def criticality(item: LimitItem, settings: Settings) -> str:
@@ -313,31 +397,77 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
     )
 
 
-@router.post("/scan-runs")
+@router.get("/regions", response_model=list[RegionOut])
+def list_regions(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[RegionOut]:
+    if not db.scalar(select(func.count(MonitoredRegion.id))):
+        try:
+            RegionService(db, settings).sync_subscriptions()
+            db.commit()
+        except OciSdkError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return _region_outputs(db)
+
+
+@router.post("/regions/discover", response_model=list[RegionOut])
+def discover_regions(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[RegionOut]:
+    try:
+        RegionService(db, settings).sync_subscriptions()
+    except OciSdkError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    db.commit()
+    return _region_outputs(db)
+
+
+@router.put("/regions/allowlist", response_model=list[RegionOut])
+def update_region_allowlist(
+    payload: RegionAllowlistUpdate,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[RegionOut]:
+    try:
+        RegionService(db, settings).update_allowlist(payload.regions)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return _region_outputs(db)
+
+
+@router.post("/regions/{region}/scan", response_model=ScanEnqueueOut)
+def trigger_region_scan(
+    region: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ScanEnqueueOut:
+    return _enqueue_scan_response(db, settings, [region])
+
+
+@router.get("/scan-requests", response_model=list[ScanRequestOut])
+def scan_requests(
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+) -> list[ScanRequest]:
+    return list(
+        db.scalars(
+            select(ScanRequest)
+            .order_by(desc(ScanRequest.requested_at), ScanRequest.region)
+            .limit(limit)
+        )
+    )
+
+
+@router.post("/scan-runs", response_model=ScanEnqueueOut)
 def trigger_scan(
-    background_tasks: BackgroundTasks,
     region: str | None = None,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> dict:
-    target_region = region or settings.oci_default_region
-    running_scan = db.scalar(
-        select(ScanRun)
-        .where(ScanRun.region == target_region, ScanRun.status == "running")
-        .order_by(desc(ScanRun.started_at))
-        .limit(1)
-    )
-    if running_scan:
-        return {"status": "already_running", "region": target_region, "scan_id": running_scan.id}
-
-    def run() -> None:
-        from app.core.database import SessionLocal
-
-        with SessionLocal() as scan_db:
-            LimitsCollector(scan_db, settings).run_scan(region)
-
-    background_tasks.add_task(run)
-    return {"status": "queued", "region": target_region, "scan_id": None}
+) -> ScanEnqueueOut:
+    return _enqueue_scan_response(db, settings, [region] if region else None)
 
 
 @router.get("/scan-runs", response_model=list[ScanRunOut])

@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import Settings
 from app.core.database import Base
-from app.models import Alert, LimitItem, ScanRun
+from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun
 from app.services.metrics import render_metrics
 
 
@@ -59,6 +59,33 @@ def test_prometheus_metrics_export_limit_and_scan_state():
             limits_scanned=1,
             total_limits_discovered=1,
             current_stage="succeeded",
+            api_request_count=75,
+            api_retry_count=3,
+            api_throttle_count=1,
+            api_concurrency_wait_seconds=1.25,
+            api_retry_sleep_seconds=4.5,
+            global_limits_skipped=2,
+        )
+    )
+    db.add(
+        MonitoredRegion(
+            region_name="us-ashburn-1",
+            region_key="IAD",
+            subscription_status="READY",
+            is_home_region=True,
+            is_enabled=True,
+        )
+    )
+    db.add(
+        ScanRequest(
+            batch_id="batch-1",
+            region="us-ashburn-1",
+            trigger="scheduled",
+            status="succeeded",
+            requested_at=now,
+            not_before=now,
+            started_at=now,
+            ended_at=now,
         )
     )
     db.add(
@@ -95,3 +122,8 @@ def test_prometheus_metrics_export_limit_and_scan_state():
     assert 'status="ok"' in output
     assert 'oci_lip_alerts_open{severity="warning"} 1.0' in output
     assert 'oci_lip_scan_last_success_timestamp_seconds{region="us-ashburn-1"}' in output
+    assert 'oci_lip_scan_last_api_requests{region="us-ashburn-1"} 75.0' in output
+    assert 'oci_lip_scan_last_api_retries{region="us-ashburn-1"} 3.0' in output
+    assert 'oci_lip_scan_last_api_throttles{region="us-ashburn-1"} 1.0' in output
+    assert 'oci_lip_region_enabled{home_region="true",region="us-ashburn-1"' in output
+    assert 'oci_lip_scan_requests{region="us-ashburn-1",status="succeeded",trigger="scheduled"} 1.0' in output

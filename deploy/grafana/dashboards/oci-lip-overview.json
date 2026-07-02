@@ -576,6 +576,53 @@
       "title": "Prometheus Alert State",
       "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"alertname": "Alert", "alertstate": "State", "availability_domain": "Availability Domain", "limit_name": "Limit", "region": "Region", "service": "Service", "severity": "Severity"}}}],
       "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 57},
+      "id": 106,
+      "panels": [],
+      "title": "Regional Scan Operations",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Latest-scan OCI request volume, SDK retries, and HTTP 429 throttles by selected region.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "gradientMode": "opacity", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 4, "scaleDistribution": {"type": "linear"}, "showPoints": "auto", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "decimals": 0, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byRegexp", "options": "/Throttles/"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+          {"matcher": {"id": "byRegexp", "options": "/Retries/"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 58},
+      "id": 17,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {"editorMode": "code", "expr": "oci_lip_scan_last_api_requests{region=~\"$region\"}", "legendFormat": "{{region}} · Requests", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "oci_lip_scan_last_api_retries{region=~\"$region\"}", "legendFormat": "{{region}} · Retries", "range": true, "refId": "B"},
+        {"editorMode": "code", "expr": "oci_lip_scan_last_api_throttles{region=~\"$region\"}", "legendFormat": "{{region}} · Throttles", "range": true, "refId": "C"}
+      ],
+      "title": "OCI API Request Pressure",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "READY OCI regions currently enabled in the persistent LIP scan allowlist.",
+      "fieldConfig": {
+        "defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "decimals": 0, "mappings": [], "max": 1, "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 58},
+      "id": 18,
+      "options": {"displayMode": "basic", "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false}, "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": false, "sizing": "auto", "valueMode": "hidden"},
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {"editorMode": "code", "expr": "oci_lip_region_enabled{region=~\"$region\",subscription_status=\"READY\"} == 1", "instant": true, "legendFormat": "{{region}}", "range": false, "refId": "A"}
+      ],
+      "title": "Enabled Regional Scanners",
+      "type": "bargauge"
     }
   ],
   "preload": false,
@@ -588,14 +635,14 @@
         "allValue": ".*",
         "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
         "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "definition": "label_values(oci_lip_limit_collection_status, region)",
+        "definition": "label_values(oci_lip_region_enabled, region)",
         "description": "OCI region",
         "includeAll": true,
         "label": "Region",
         "multi": true,
         "name": "region",
         "options": [],
-        "query": {"query": "label_values(oci_lip_limit_collection_status, region)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "query": {"query": "label_values(oci_lip_region_enabled, region)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
         "refresh": 1,
         "regex": "",
         "sort": 1,

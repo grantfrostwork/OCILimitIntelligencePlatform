@@ -52,6 +52,10 @@ def _is_dynamic_compute_limit_value(service_name: str, value: Any) -> bool:
     )
 
 
+def _is_global_limit_value(value: Any) -> bool:
+    return str(_field(value, "scope_type") or "").upper() in {"GLOBAL", "TENANCY"}
+
+
 def _bounded_futures(
     executor: ThreadPoolExecutor,
     jobs: Iterable[JobT],
@@ -79,10 +83,18 @@ def _bounded_futures(
 
 
 class LimitsCollector:
-    def __init__(self, db: Session, settings: Settings, sdk: OciSdk | None = None) -> None:
+    def __init__(
+        self,
+        db: Session,
+        settings: Settings,
+        sdk: OciSdk | None = None,
+        *,
+        canonical_region: str | None = None,
+    ) -> None:
         self.db = db
         self.settings = settings
         self.sdk = sdk or OciSdk(settings)
+        self.canonical_region = canonical_region or settings.oci_default_region
         self.alerts = AlertService(db, settings, self.sdk)
         self._limit_item_cache: dict[tuple[str, str, str, str, str | None, str], LimitItem] = {}
 
@@ -100,9 +112,25 @@ class LimitsCollector:
         ]
         return regions or [self.settings.oci_default_region]
 
-    def run_scan(self, region: str | None = None) -> ScanRun:
+    def run_scan(
+        self,
+        region: str | None = None,
+        *,
+        trigger: str = "manual",
+        batch_id: str | None = None,
+        attempt: int = 1,
+        max_attempts: int = 1,
+    ) -> ScanRun:
         target_region = region or self.settings.oci_default_region
-        scan = ScanRun(region=target_region, status="running", current_stage="discovering_services")
+        scan = ScanRun(
+            region=target_region,
+            status="running",
+            current_stage="discovering_services",
+            trigger=trigger,
+            batch_id=batch_id,
+            attempt=attempt,
+            max_attempts=max_attempts,
+        )
         self.db.add(scan)
         self.db.commit()
         self.db.refresh(scan)
@@ -114,6 +142,7 @@ class LimitsCollector:
             self.db.commit()
 
             scan.current_stage = "discovering_limits"
+            self._sync_scan_telemetry(scan)
             self.db.commit()
             service_limit_values = self._discover_limit_values(scan, target_region, services)
 
@@ -144,6 +173,7 @@ class LimitsCollector:
                 region=target_region,
             )
         finally:
+            self._sync_scan_telemetry(scan)
             scan.ended_at = datetime.now(UTC)
             self.db.commit()
             self.db.refresh(scan)
@@ -169,7 +199,14 @@ class LimitsCollector:
             for service_name, future in futures:
                 scan.current_service = service_name
                 try:
-                    values = list(future.result())
+                    raw_values = list(future.result())
+                    if region == self.canonical_region:
+                        values = raw_values
+                    else:
+                        values = [
+                            value for value in raw_values if not _is_global_limit_value(value)
+                        ]
+                        scan.global_limits_skipped += len(raw_values) - len(values)
                     discovered.append((service_name, values))
                     scan.total_limits_discovered += len(values)
                 except OciSdkError as exc:
@@ -185,7 +222,9 @@ class LimitsCollector:
                 finally:
                     scan.services_scanned += 1
                     if scan.services_scanned % self.settings.oci_db_commit_batch_size == 0:
+                        self._sync_scan_telemetry(scan)
                         self.db.commit()
+        self._sync_scan_telemetry(scan)
         self.db.commit()
         return discovered
 
@@ -231,8 +270,23 @@ class LimitsCollector:
                 if completed[service_name] == expected[service_name]:
                     scan.services_scanned += 1
                 if scan.limits_scanned % self.settings.oci_db_commit_batch_size == 0:
+                    self._sync_scan_telemetry(scan)
                     self.db.commit()
+        self._sync_scan_telemetry(scan)
         self.db.commit()
+
+    def _sync_scan_telemetry(self, scan: ScanRun) -> None:
+        snapshot_method = getattr(self.sdk, "telemetry_snapshot", None)
+        if snapshot_method is None:
+            return
+        telemetry = snapshot_method()
+        scan.api_request_count = int(telemetry.get("api_request_count", 0))
+        scan.api_retry_count = int(telemetry.get("api_retry_count", 0))
+        scan.api_throttle_count = int(telemetry.get("api_throttle_count", 0))
+        scan.api_concurrency_wait_seconds = float(
+            telemetry.get("api_concurrency_wait_seconds", 0)
+        )
+        scan.api_retry_sleep_seconds = float(telemetry.get("api_retry_sleep_seconds", 0))
 
     def _list_services(self, region: str) -> list[Any]:
         return self.sdk.list_services(self.settings.oci_tenancy_ocid, region=region)

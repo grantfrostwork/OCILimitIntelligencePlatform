@@ -116,3 +116,43 @@ def test_scan_parallelizes_sdk_calls_and_persists_results():
     assert dynamic.last_available is None
     assert dynamic.last_percent_used is None
     assert dynamic.last_collection_status == "ok"
+
+
+class GlobalLimitFakeSdk(ConcurrentFakeSdk):
+    def list_services(self, compartment_id: str, *, region: str):
+        return [SimpleNamespace(name="object-storage", description="Object Storage")]
+
+    def list_limit_values(self, compartment_id: str, service_name: str, *, region: str):
+        return [
+            SimpleNamespace(
+                name="namespace-count",
+                scope_type="GLOBAL",
+                availability_domain=None,
+                value=10,
+            ),
+            SimpleNamespace(
+                name="bucket-count",
+                scope_type="REGION",
+                availability_domain=None,
+                value=100,
+            ),
+        ]
+
+
+def test_noncanonical_region_skips_global_limit_values():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine)()
+    settings = Settings(oci_tenancy_ocid="tenancy")
+
+    scan = LimitsCollector(
+        db,
+        settings,
+        sdk=GlobalLimitFakeSdk(),
+        canonical_region="us-ashburn-1",
+    ).run_scan("us-phoenix-1")
+
+    rows = list(db.scalars(select(LimitItem)))
+    assert scan.status == "succeeded"
+    assert scan.global_limits_skipped == 1
+    assert [item.limit_name for item in rows] == ["bucket-count"]

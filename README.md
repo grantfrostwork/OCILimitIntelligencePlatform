@@ -6,7 +6,8 @@ The application is designed to run on an OCI Linux VM with instance principal au
 
 ## Features
 
-- Hourly OCI service limit discovery and resource availability scans.
+- Persistent region allowlist populated from the tenancy's READY region subscriptions.
+- Hourly OCI service limit discovery and resource availability scans across selected regions.
 - Service, region, scope, and limit-level normalization.
 - Warning and critical threshold evaluation.
 - Historical snapshots and simple linear trend projections.
@@ -14,7 +15,8 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Operations dashboard with filtering, sorting, pagination, export, service drilldown, alerts, and trend cards.
 - Bill of Materials upload and analysis for PDF, DOCX, XLSX, CSV, TXT, JSON, and Terraform plan JSON-style files.
 - Direct OCI Python SDK integration with instance-principal authentication, retries, and pagination.
-- Bounded parallel collection for service values and resource availability.
+- Bounded regional, service-value, and resource-availability concurrency with staggered starts.
+- Exponential backoff with jitter, regional retries, and OCI throttling telemetry.
 - Prometheus metrics for every persisted limit plus scanner and alert health.
 - Self-hosted Prometheus and Grafana with a provisioned OCI limit operations dashboard.
 - Docker Compose deployment with PostgreSQL, API, worker, and frontend services.
@@ -80,7 +82,29 @@ LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
 
 The VM uses the OCI Python SDK directly. It does not install or invoke the OCI CLI. Service-value
 calls and resource-availability calls are parallelized with `OCI_MAX_SERVICE_WORKERS` and
-`OCI_MAX_LIMIT_WORKERS` respectively.
+`OCI_MAX_LIMIT_WORKERS` respectively. Regional scans are controlled by a persistent allowlist in the
+**Region Coverage** section of the UI. A new installation enables only `OCI_DEFAULT_REGION`; an
+operator must deliberately select and save additional READY regions.
+
+The recommended enterprise defaults are:
+
+```bash
+OCI_MAX_REGION_WORKERS=2
+OCI_GLOBAL_MAX_CONCURRENT_REQUESTS=12
+OCI_REGION_STAGGER_SECONDS=15
+OCI_REGION_SCAN_MAX_ATTEMPTS=3
+OCI_REGION_RETRY_BASE_SECONDS=30
+OCI_REGION_RETRY_MAX_SECONDS=300
+```
+
+One VM can scan all subscribed commercial regions by constructing a regional Limits client for each
+endpoint. The VM does not need to be deployed in every region. It must have outbound HTTPS access:
+use the existing Internet Gateway when it has a public IP in a public subnet, or a NAT Gateway and
+`0.0.0.0/0` route when it is private. Keep the allowlist restricted to regions the customer actually
+uses to control request volume and scan duration.
+
+Tenancy/global limit rows are collected only from the tenancy home region, which is the canonical
+region for those scopes. Region and availability-domain limits remain separate per regional endpoint.
 
 ## Prometheus
 
@@ -93,6 +117,11 @@ not contact OCI during a scrape. Useful series include:
 - `oci_lip_limit_usage_percent`
 - `oci_lip_limit_collection_status`
 - `oci_lip_scan_last_success_timestamp_seconds`
+- `oci_lip_scan_last_api_requests`
+- `oci_lip_scan_last_api_retries`
+- `oci_lip_scan_last_api_throttles`
+- `oci_lip_region_enabled`
+- `oci_lip_scan_requests`
 - `oci_lip_alerts_open`
 
 ## Grafana Dashboard

@@ -8,14 +8,16 @@ import {
   ExternalLink,
   FileSearch,
   Filter,
+  Globe2,
   Play,
   RefreshCw,
+  Save,
   Search,
   Server,
   Timer,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Bar,
@@ -27,16 +29,28 @@ import {
   YAxis,
 } from "recharts";
 import {
+  discoverRegions,
   exportUrl,
   getAlerts,
   getDashboard,
   getLimits,
+  getMonitoredRegions,
   getScanRuns,
   getServices,
+  saveRegionAllowlist,
   triggerScan,
+  triggerRegionScan,
   uploadBom,
 } from "./api";
-import type { Alert, BomDocument, Dashboard, LimitItem, ScanRun } from "./types";
+import type {
+  Alert,
+  BomDocument,
+  Dashboard,
+  LimitItem,
+  MonitoredRegion,
+  ScanEnqueueResult,
+  ScanRun,
+} from "./types";
 
 const PAGE_SIZE = 30;
 const AUTO_REFRESH_OPTIONS = [
@@ -101,6 +115,16 @@ function statusLabel(value: Dashboard["overall_status"] | undefined) {
   return (value ?? "green").toUpperCase();
 }
 
+function scanResultMessage(result: ScanEnqueueResult) {
+  if (result.queued_regions.length === 0) {
+    return `Scans already queued or running for ${result.skipped_regions.join(", ")}.`;
+  }
+  const queued = `Queued ${result.queued_regions.length} region${result.queued_regions.length === 1 ? "" : "s"}`;
+  return result.skipped_regions.length
+    ? `${queued}; ${result.skipped_regions.length} already active.`
+    : `${queued}.`;
+}
+
 function CriticalityBadge({ value }: { value: string }) {
   return <span className={`badge badge-${value}`}>{value}</span>;
 }
@@ -144,6 +168,8 @@ export default function App() {
   const [totalLimits, setTotalLimits] = useState(0);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [scanRuns, setScanRuns] = useState<ScanRun[]>([]);
+  const [monitoredRegions, setMonitoredRegions] = useState<MonitoredRegion[]>([]);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [services, setServices] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [service, setService] = useState("");
@@ -158,9 +184,12 @@ export default function App() {
   const [scanMessage, setScanMessage] = useState("");
   const [bomDocument, setBomDocument] = useState<BomDocument | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [savingRegions, setSavingRegions] = useState(false);
+  const [discoveringRegions, setDiscoveringRegions] = useState(false);
   const [error, setError] = useState("");
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(storedAutoRefreshEnabled);
   const [autoRefreshIntervalMs, setAutoRefreshIntervalMs] = useState(storedAutoRefreshInterval);
+  const regionDraftDirty = useRef(false);
 
   const queryParams = useMemo(
     () => ({
@@ -177,20 +206,29 @@ export default function App() {
     [service, region, query, level, nearLimit, sortBy, sortDir, page]
   );
 
-  const latestScan = scanRuns[0] ?? dashboard?.last_scan ?? null;
-  const scanRunning = latestScan?.status === "running";
-  const progress = scanProgress(latestScan);
+  const activeScans = scanRuns.filter((item) => item.status === "running");
+  const latestScan = activeScans[0] ?? scanRuns[0] ?? dashboard?.last_scan ?? null;
+  const queuedRegionCount = monitoredRegions.filter((item) =>
+    ["queued", "running"].includes(item.request_status ?? "")
+  ).length;
+  const scanRunning = activeScans.length > 0 || queuedRegionCount > 0;
+  const progress = activeScans.length
+    ? activeScans.reduce((total, item) => total + scanProgress(item), 0) / activeScans.length
+    : queuedRegionCount > 0
+      ? 0
+      : scanProgress(latestScan);
 
   async function refresh(showSpinner = true) {
     if (showSpinner) setLoading(true);
     setError("");
     try {
-      const [dashboardData, limitData, alertData, scanData, serviceData] = await Promise.all([
+      const [dashboardData, limitData, alertData, scanData, serviceData, regionData] = await Promise.all([
         getDashboard(),
         getLimits(queryParams),
         getAlerts(),
         getScanRuns(),
         getServices(),
+        getMonitoredRegions(),
       ]);
       setDashboard(dashboardData);
       setLimits(limitData.items);
@@ -199,6 +237,10 @@ export default function App() {
       setScanRuns(scanData);
       setServices(serviceData.services);
       setRegions(serviceData.regions);
+      setMonitoredRegions(regionData);
+      if (!regionDraftDirty.current) {
+        setSelectedRegions(regionData.filter((item) => item.is_enabled).map((item) => item.region_name));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load LIP data.");
     } finally {
@@ -220,12 +262,20 @@ export default function App() {
   }, [autoRefreshEnabled, autoRefreshIntervalMs]);
 
   useEffect(() => {
-    if (!autoRefreshEnabled) return;
+    if (!autoRefreshEnabled || scanRunning) return;
     const timer = window.setInterval(() => {
       refresh(false);
     }, autoRefreshIntervalMs);
     return () => window.clearInterval(timer);
-  }, [autoRefreshEnabled, autoRefreshIntervalMs, queryParams]);
+  }, [autoRefreshEnabled, autoRefreshIntervalMs, queryParams, scanRunning]);
+
+  useEffect(() => {
+    if (!scanRunning) return;
+    const timer = window.setInterval(() => {
+      refresh(false);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [scanRunning, queryParams]);
 
   function changeSort(field: string) {
     if (sortBy === field) {
@@ -237,23 +287,69 @@ export default function App() {
   }
 
   async function runScan() {
-    if (scanRunning) {
-      setScanMessage(`Scan already running in ${latestScan.region}.`);
-      return;
-    }
     setScanMessage("Queuing scan...");
     try {
       const result = await triggerScan(region || undefined);
-      setScanMessage(
-        result.status === "already_running"
-          ? `Scan already running in ${result.region}.`
-          : autoRefreshEnabled
-            ? `Scan queued for ${result.region}. Progress will update on the selected interval.`
-            : `Scan queued for ${result.region}. Use Refresh or enable auto-refresh to update progress.`
-      );
+      setScanMessage(scanResultMessage(result));
       setTimeout(() => refresh(false), 1000);
     } catch (err) {
       setScanMessage(err instanceof Error ? err.message : "Failed to queue scan.");
+    }
+  }
+
+  function toggleRegion(regionName: string) {
+    regionDraftDirty.current = true;
+    setSelectedRegions((current) =>
+      current.includes(regionName)
+        ? current.filter((item) => item !== regionName)
+        : [...current, regionName]
+    );
+  }
+
+  async function saveRegions() {
+    if (selectedRegions.length === 0) {
+      setError("Select at least one READY region for scheduled scanning.");
+      return;
+    }
+    setSavingRegions(true);
+    setError("");
+    try {
+      const result = await saveRegionAllowlist(selectedRegions);
+      setMonitoredRegions(result);
+      setSelectedRegions(result.filter((item) => item.is_enabled).map((item) => item.region_name));
+      regionDraftDirty.current = false;
+      setScanMessage(`Monitoring ${selectedRegions.length} region${selectedRegions.length === 1 ? "" : "s"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save region allowlist.");
+    } finally {
+      setSavingRegions(false);
+    }
+  }
+
+  async function refreshRegionSubscriptions() {
+    setDiscoveringRegions(true);
+    setError("");
+    try {
+      const result = await discoverRegions();
+      setMonitoredRegions(result);
+      if (!regionDraftDirty.current) {
+        setSelectedRegions(result.filter((item) => item.is_enabled).map((item) => item.region_name));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to discover subscribed regions.");
+    } finally {
+      setDiscoveringRegions(false);
+    }
+  }
+
+  async function runRegionScan(regionName: string) {
+    setScanMessage(`Queuing ${regionName}...`);
+    try {
+      const result = await triggerRegionScan(regionName);
+      setScanMessage(scanResultMessage(result));
+      setTimeout(() => refresh(false), 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to queue ${regionName}.`);
     }
   }
 
@@ -344,10 +440,21 @@ export default function App() {
         <section className="scan-progress-panel">
           <div className="scan-progress-heading">
             <div>
-              <h2>{scanRunning ? "Scan In Progress" : "Latest Scan"}</h2>
+              <h2>
+                {activeScans.length > 1
+                  ? `${activeScans.length} Regional Scans`
+                  : activeScans.length === 1
+                    ? "Scan In Progress"
+                    : queuedRegionCount > 0
+                      ? `${queuedRegionCount} Regional Scan${queuedRegionCount === 1 ? "" : "s"} Queued`
+                      : "Latest Scan"}
+              </h2>
               <p>
-                {stageLabel(latestScan.current_stage)} in {latestScan.region}
-                {latestScan.current_service ? ` · ${latestScan.current_service}` : ""}
+                {queuedRegionCount > 0 && activeScans.length === 0
+                  ? "Waiting for an available regional worker"
+                  : `${stageLabel(latestScan.current_stage)} in ${latestScan.region}${
+                      latestScan.current_service ? ` · ${latestScan.current_service}` : ""
+                    }`}
               </p>
             </div>
             <strong>{Math.round(progress)}%</strong>
@@ -373,9 +480,155 @@ export default function App() {
             {latestScan.availability_errors > 0 && (
               <span>{fmtNumber(latestScan.availability_errors)} collection errors</span>
             )}
+            <span>
+              {fmtNumber(latestScan.api_request_count)} API requests · {fmtNumber(latestScan.api_retry_count)} retries
+              {latestScan.api_throttle_count > 0
+                ? ` · ${fmtNumber(latestScan.api_throttle_count)} throttles`
+                : ""}
+            </span>
+            {latestScan.attempt > 1 && (
+              <span>
+                Attempt {latestScan.attempt} of {latestScan.max_attempts}
+              </span>
+            )}
           </div>
         </section>
       )}
+
+      <section className="region-panel">
+        <div className="panel-header region-panel-header">
+          <div>
+            <h2>
+              <Globe2 size={18} />
+              Region Coverage
+            </h2>
+            <p>
+              {selectedRegions.length} of{" "}
+              {monitoredRegions.filter((item) => item.subscription_status === "READY").length} subscribed regions
+              selected for scheduled scans.
+            </p>
+          </div>
+          <div className="region-toolbar">
+            <button
+              className="button secondary"
+              onClick={refreshRegionSubscriptions}
+              disabled={discoveringRegions}
+            >
+              <RefreshCw size={16} />
+              {discoveringRegions ? "Discovering" : "Refresh subscriptions"}
+            </button>
+            <button className="button primary" onClick={saveRegions} disabled={savingRegions}>
+              <Save size={16} />
+              {savingRegions ? "Saving" : "Save allowlist"}
+            </button>
+          </div>
+        </div>
+        {monitoredRegions.length ? (
+          <div className="region-table-shell">
+            <table className="region-table">
+              <thead>
+                <tr>
+                  <th>Monitor</th>
+                  <th>Region</th>
+                  <th>Subscription</th>
+                  <th>Latest scan</th>
+                  <th>Progress</th>
+                  <th>API activity</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monitoredRegions.map((item) => {
+                  const current = item.latest_scan;
+                  const requestActive = ["queued", "running"].includes(item.request_status ?? "");
+                  const currentProgress = item.request_status === "queued" ? 0 : scanProgress(current);
+                  return (
+                    <tr key={item.region_name}>
+                      <td>
+                        <input
+                          className="region-checkbox"
+                          type="checkbox"
+                          checked={selectedRegions.includes(item.region_name)}
+                          disabled={item.subscription_status !== "READY"}
+                          aria-label={`Monitor ${item.region_name}`}
+                          onChange={() => toggleRegion(item.region_name)}
+                        />
+                      </td>
+                      <td>
+                        <strong className="region-name">{item.region_name}</strong>
+                        <span>
+                          {item.region_key ?? "No region key"}
+                          {item.is_home_region ? " · Home / global canonical" : ""}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`region-state state-${item.subscription_status.toLowerCase()}`}>
+                          {item.subscription_status}
+                        </span>
+                        <span>{item.is_enabled ? "Scheduled" : "Not scheduled"}</span>
+                      </td>
+                      <td>
+                        <strong>
+                          {item.request_status
+                            ? stageLabel(item.request_status)
+                            : current
+                              ? stageLabel(current.status)
+                              : "Never"}
+                        </strong>
+                        <span>
+                          {item.next_attempt_at
+                            ? `Next attempt ${fmtDate(item.next_attempt_at)}`
+                            : current
+                              ? fmtDate(current.ended_at ?? current.started_at)
+                              : "No scan history"}
+                        </span>
+                        {current?.error_summary && <span className="region-error">{current.error_summary}</span>}
+                      </td>
+                      <td>
+                        <div className="region-progress">
+                          <span>{Math.round(currentProgress)}%</span>
+                          <div>
+                            <i style={{ width: `${currentProgress}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {current ? (
+                          <>
+                            <strong>{fmtNumber(current.api_request_count)} requests</strong>
+                            <span>
+                              {fmtNumber(current.api_retry_count)} retries · {fmtNumber(current.api_throttle_count)} throttles
+                            </span>
+                          </>
+                        ) : (
+                          <span>No activity</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          className="button secondary region-scan-button"
+                          onClick={() => runRegionScan(item.region_name)}
+                          disabled={item.subscription_status !== "READY" || requestActive}
+                          title={`Run a scan in ${item.region_name}`}
+                        >
+                          <Play size={15} />
+                          {requestActive
+                            ? stageLabel(item.request_status)
+                            : current?.status === "failed"
+                              ? "Retry"
+                              : "Scan"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState title="No regions discovered" detail="Refresh subscriptions to load READY OCI regions." />
+        )}
+      </section>
 
       <section className="stat-grid">
         <StatCard

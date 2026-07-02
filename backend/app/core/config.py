@@ -26,7 +26,13 @@ class Settings(BaseSettings):
     oci_read_timeout_seconds: int = 45
     oci_max_service_workers: int = 6
     oci_max_limit_workers: int = 10
+    oci_max_region_workers: int = 2
+    oci_global_max_concurrent_requests: int = 12
     oci_db_commit_batch_size: int = 25
+    oci_region_stagger_seconds: int = 15
+    oci_region_scan_max_attempts: int = 3
+    oci_region_retry_base_seconds: int = 30
+    oci_region_retry_max_seconds: int = 300
 
     warning_threshold_percent: float = 90.0
     critical_threshold_percent: float = 98.0
@@ -35,6 +41,7 @@ class Settings(BaseSettings):
 
     lip_enable_scheduler: bool = False
     lip_scan_interval_minutes: int = 60
+    lip_worker_poll_seconds: int = 2
     lip_enable_notifications: bool = False
     lip_notification_topic_name: str = "oci-lip-limit-alerts"
     lip_notification_compartment_ocid: str | None = None

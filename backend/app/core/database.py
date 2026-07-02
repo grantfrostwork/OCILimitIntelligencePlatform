@@ -28,10 +28,10 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
-    _ensure_scan_run_progress_columns()
+    _ensure_scan_run_columns()
 
 
-def _ensure_scan_run_progress_columns() -> None:
+def _ensure_scan_run_columns() -> None:
     inspector = inspect(engine)
     if "scan_runs" not in inspector.get_table_names():
         return
@@ -42,6 +42,16 @@ def _ensure_scan_run_progress_columns() -> None:
         "current_service": "VARCHAR(128)",
         "services_scanned": "INTEGER NOT NULL DEFAULT 0",
         "total_limits_discovered": "INTEGER NOT NULL DEFAULT 0",
+        "trigger": "VARCHAR(32) NOT NULL DEFAULT 'scheduled'",
+        "batch_id": "VARCHAR(36)",
+        "attempt": "INTEGER NOT NULL DEFAULT 1",
+        "max_attempts": "INTEGER NOT NULL DEFAULT 1",
+        "api_request_count": "INTEGER NOT NULL DEFAULT 0",
+        "api_retry_count": "INTEGER NOT NULL DEFAULT 0",
+        "api_throttle_count": "INTEGER NOT NULL DEFAULT 0",
+        "api_concurrency_wait_seconds": "FLOAT NOT NULL DEFAULT 0",
+        "api_retry_sleep_seconds": "FLOAT NOT NULL DEFAULT 0",
+        "global_limits_skipped": "INTEGER NOT NULL DEFAULT 0",
     }
 
     with engine.begin() as connection:

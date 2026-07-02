@@ -24,6 +24,12 @@ OCI_TENANCY_OCID=ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz
 OCI_DEFAULT_REGION=us-ashburn-1
 OCI_MAX_SERVICE_WORKERS=6
 OCI_MAX_LIMIT_WORKERS=10
+OCI_MAX_REGION_WORKERS=2
+OCI_GLOBAL_MAX_CONCURRENT_REQUESTS=12
+OCI_REGION_STAGGER_SECONDS=15
+OCI_REGION_SCAN_MAX_ATTEMPTS=3
+OCI_REGION_RETRY_BASE_SECONDS=30
+OCI_REGION_RETRY_MAX_SECONDS=300
 LIP_ENABLE_NOTIFICATIONS=true
 LIP_NOTIFICATION_EMAILS=["grant.frost@oracle.com"]
 GRAFANA_ROOT_URL=http://<vm-ip>/grafana/
@@ -39,11 +45,20 @@ docker compose up -d --build
 
 Open `http://<vm-ip>`.
 
+On first start, LIP discovers all READY tenancy subscriptions but enables only
+`OCI_DEFAULT_REGION`. Use **Region Coverage** in the UI to select the regions that should participate
+in scheduled scans, save the allowlist, and then run a manual batch. The allowlist and regional queue
+are persisted in PostgreSQL.
+
 Open the provisioned Grafana dashboard at `http://<vm-ip>/grafana/`. Anonymous users receive the
 Viewer role. Use the configured administrator account only for datasource troubleshooting or dashboard
 development; the version-controlled dashboard is read-only in the UI.
 
 For production, place OCI Load Balancer or NGINX TLS termination in front of the frontend container and restrict inbound access.
+
+The scanner needs outbound TCP 443 access to every selected OCI region. A public-subnet VM with a
+public IP should use an Internet Gateway. A private-subnet VM should use a NAT Gateway and a route rule
+for `0.0.0.0/0`; a Service Gateway alone does not provide cross-region public endpoint access.
 
 ## Backups
 
@@ -105,6 +120,6 @@ docker compose config --quiet
 - Trigger a manual scan from the UI after first deployment.
 - Confirm the OCI Notifications email subscription when the email arrives.
 - Keep `LIP_ENABLE_NOTIFICATIONS=false` until the topic/subscriber setup is intentional.
-- Expand to all subscribed regions with `OCI_SCAN_ALL_REGIONS=true` after the default-region scan is stable.
+- Add only actively used READY regions through the persistent Region Coverage allowlist.
 - Rotate `GRAFANA_ADMIN_PASSWORD` through `.env` and recreate only the Grafana container.
 - Back up both `prometheus-data` and `grafana-data` with the database backup workflow when dashboard history is operationally important.

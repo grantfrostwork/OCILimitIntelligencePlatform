@@ -6,7 +6,7 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 
 - React frontend served by NGINX.
 - FastAPI backend for dashboard, limits, alert, scan, and BOM APIs.
-- Worker process that runs scans on a fixed interval.
+- Worker process with a durable regional queue, fixed scan interval, and bounded regional executor.
 - PostgreSQL for normalized current state, historical snapshots, alerts, audit logs, and BOM analysis.
 - OCI Python SDK clients for Limits, Identity, and Notifications.
 - Prometheus exposition endpoint backed by persisted limit state.
@@ -16,14 +16,17 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 
 ## Data Flow
 
-1. Worker discovers configured regions through `IdentityClient.list_region_subscriptions`.
-2. Worker calls `LimitsClient.list_services` in the root tenancy compartment.
-3. Worker calls `LimitsClient.list_limit_values` concurrently across services.
-4. Worker calls `LimitsClient.get_resource_availability` concurrently across individual limits.
-5. Rows are normalized by service, limit, region, scope type, and availability domain.
-6. Snapshots are stored, trends are calculated, and alert rules are evaluated.
-7. UI reads dashboard aggregates and matrix rows from the API.
-8. BOM uploads are parsed, extracted resources are mapped to scanned limits, and recommendations are persisted.
+1. Worker discovers READY regions through `IdentityClient.list_region_subscriptions` and reconciles
+   them with the persistent operator allowlist.
+2. Worker queues the enabled regions with staggered start times and constructs a `LimitsClient` for
+   each regional endpoint.
+3. Worker calls `LimitsClient.list_services` in the root tenancy compartment.
+4. Worker calls `LimitsClient.list_limit_values` concurrently across services.
+5. Worker calls `LimitsClient.get_resource_availability` concurrently across individual limits.
+6. Rows are normalized by service, limit, region, scope type, and availability domain.
+7. Snapshots are stored, trends are calculated, and alert rules are evaluated.
+8. UI reads dashboard aggregates, regional progress, and matrix rows from the API.
+9. BOM uploads are parsed, extracted resources are mapped to scanned limits, and recommendations are persisted.
 
 ## SDK Concurrency and Reliability
 
@@ -36,7 +39,15 @@ and progress is committed in configurable batches. Existing `LimitItem` rows are
 to avoid a database query for every OCI response.
 
 Default concurrency is six service-value requests and ten resource-availability requests. These values
-should be tuned conservatively if the tenancy encounters service throttling.
+operate under a process-wide request semaphore. Regional scans default to two workers, with starts
+staggered by 15 seconds. OCI SDK retries use exponential backoff with jitter; failed regional scans
+also receive a durable retry timestamp and a bounded number of attempts. Request, retry, HTTP 429,
+semaphore wait, and retry-sleep metrics are persisted with every scan. These values should be tuned
+conservatively if the tenancy encounters service throttling.
+
+The scan request queue is stored in PostgreSQL. On worker restart, interrupted queue rows are returned
+to `queued` and interrupted scan runs are finalized as failed, so a process restart cannot leave the
+UI permanently reporting a running scan.
 
 ## Scope Handling
 
@@ -51,6 +62,19 @@ The collector does not collapse a service limit by name alone. It preserves:
 - Subscription ID, when used later
 
 This is required because OCI returns separate rows for AD, region, and global limits.
+
+The tenancy home region is the canonical source for `GLOBAL` and `TENANCY` scope rows. Those rows are
+skipped in other regions to avoid duplicates; region and AD rows continue to be stored under the
+regional endpoint that returned them.
+
+## Network Topology
+
+A single VM can reach all OCI regional public service endpoints. In a public subnet, assign a public
+IP and route `0.0.0.0/0` through an Internet Gateway. In a private subnet, route outbound traffic
+through a NAT Gateway. No inbound access is required for SDK calls, and separate scanner VMs in each
+region are unnecessary at the expected request volume. If a future installation consistently reaches
+throttling or scan-duration objectives cannot be met with safe concurrency, split workers by region
+group while retaining the same PostgreSQL queue.
 
 ## Availability API Handling
 

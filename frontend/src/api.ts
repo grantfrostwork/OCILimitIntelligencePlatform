@@ -1,4 +1,12 @@
-import type { Alert, BomDocument, Dashboard, LimitItem, ScanRun } from "./types";
+import type {
+  Alert,
+  BomDocument,
+  Dashboard,
+  LimitItem,
+  MonitoredRegion,
+  ScanEnqueueResult,
+  ScanRun,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -57,10 +65,32 @@ export function getScanRuns() {
 }
 
 export function triggerScan(region?: string) {
-  return request<{ status: string; region: string; scan_id: string | null }>(
+  return request<ScanEnqueueResult>(
     `/api/scan-runs${queryString({ region })}`,
     { method: "POST" }
   );
+}
+
+export function getMonitoredRegions() {
+  return request<MonitoredRegion[]>("/api/regions");
+}
+
+export function discoverRegions() {
+  return request<MonitoredRegion[]>("/api/regions/discover", { method: "POST" });
+}
+
+export function saveRegionAllowlist(regions: string[]) {
+  return request<MonitoredRegion[]>("/api/regions/allowlist", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ regions }),
+  });
+}
+
+export function triggerRegionScan(region: string) {
+  return request<ScanEnqueueResult>(`/api/regions/${encodeURIComponent(region)}/scan`, {
+    method: "POST",
+  });
 }
 
 export function uploadBom(file: File) {

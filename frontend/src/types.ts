@@ -13,8 +13,39 @@ export interface ScanRun {
   total_limits_discovered: number;
   limits_scanned: number;
   availability_errors: number;
+  trigger: string;
+  batch_id: string | null;
+  attempt: number;
+  max_attempts: number;
+  api_request_count: number;
+  api_retry_count: number;
+  api_throttle_count: number;
+  api_concurrency_wait_seconds: number;
+  api_retry_sleep_seconds: number;
+  global_limits_skipped: number;
   progress_percent: number;
   error_summary: string | null;
+}
+
+export interface MonitoredRegion {
+  region_name: string;
+  region_key: string | null;
+  subscription_status: string;
+  is_home_region: boolean;
+  is_enabled: boolean;
+  stagger_order: number;
+  latest_scan: ScanRun | null;
+  request_status: string | null;
+  request_id: string | null;
+  next_attempt_at: string | null;
+}
+
+export interface ScanEnqueueResult {
+  status: string;
+  batch_id: string | null;
+  regions: string[];
+  queued_regions: string[];
+  skipped_regions: string[];
 }
 
 export interface LimitItem {

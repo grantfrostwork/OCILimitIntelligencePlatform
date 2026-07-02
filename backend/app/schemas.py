@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScanRunOut(BaseModel):
@@ -18,8 +18,61 @@ class ScanRunOut(BaseModel):
     total_limits_discovered: int
     limits_scanned: int
     availability_errors: int
+    trigger: str
+    batch_id: str | None
+    attempt: int
+    max_attempts: int
+    api_request_count: int
+    api_retry_count: int
+    api_throttle_count: int
+    api_concurrency_wait_seconds: float
+    api_retry_sleep_seconds: float
+    global_limits_skipped: int
     progress_percent: float
     error_summary: str | None
+
+
+class RegionAllowlistUpdate(BaseModel):
+    regions: list[str] = Field(min_length=1)
+
+
+class RegionOut(BaseModel):
+    region_name: str
+    region_key: str | None
+    subscription_status: str
+    is_home_region: bool
+    is_enabled: bool
+    stagger_order: int
+    latest_scan: ScanRunOut | None
+    request_status: str | None
+    request_id: str | None
+    next_attempt_at: datetime | None
+
+
+class ScanRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    batch_id: str
+    region: str
+    trigger: str
+    status: str
+    requested_at: datetime
+    not_before: datetime
+    started_at: datetime | None
+    ended_at: datetime | None
+    attempts_completed: int
+    max_attempts: int
+    last_scan_run_id: str | None
+    error_summary: str | None
+
+
+class ScanEnqueueOut(BaseModel):
+    status: str
+    batch_id: str | None
+    regions: list[str]
+    queued_regions: list[str]
+    skipped_regions: list[str]
 
 
 class LimitItemOut(BaseModel):

@@ -33,6 +33,16 @@ class ScanRun(Base):
     total_limits_discovered: Mapped[int] = mapped_column(Integer, default=0)
     limits_scanned: Mapped[int] = mapped_column(Integer, default=0)
     availability_errors: Mapped[int] = mapped_column(Integer, default=0)
+    trigger: Mapped[str] = mapped_column(String(32), default="scheduled", index=True)
+    batch_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=1)
+    api_request_count: Mapped[int] = mapped_column(Integer, default=0)
+    api_retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    api_throttle_count: Mapped[int] = mapped_column(Integer, default=0)
+    api_concurrency_wait_seconds: Mapped[float] = mapped_column(Float, default=0)
+    api_retry_sleep_seconds: Mapped[float] = mapped_column(Float, default=0)
+    global_limits_skipped: Mapped[int] = mapped_column(Integer, default=0)
     error_summary: Mapped[str | None] = mapped_column(Text)
 
     snapshots: Mapped[list["LimitSnapshot"]] = relationship(back_populates="scan_run")
@@ -54,6 +64,38 @@ class ScanRun(Base):
         if self.current_stage == "calculating_trends":
             return 98.0
         return 0.0
+
+
+class MonitoredRegion(Base):
+    __tablename__ = "monitored_regions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    region_name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    region_key: Mapped[str | None] = mapped_column(String(16))
+    subscription_status: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
+    is_home_region: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    stagger_order: Mapped[int] = mapped_column(Integer, default=0)
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScanRequest(Base):
+    __tablename__ = "scan_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    batch_id: Mapped[str] = mapped_column(String(36), index=True)
+    region: Mapped[str] = mapped_column(String(64), index=True)
+    trigger: Mapped[str] = mapped_column(String(32), default="manual", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    not_before: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts_completed: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    last_scan_run_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    error_summary: Mapped[str | None] = mapped_column(Text)
 
 
 class OciService(Base):

@@ -9,13 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import bom, health, limits
 from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
-from app.services.collector import LimitsCollector
+from app.services.scan_queue import enqueue_scan_requests
 
 
 def run_scheduled_scan() -> None:
     settings = get_settings()
     with SessionLocal() as db:
-        LimitsCollector(db, settings).run_all_configured_regions()
+        enqueue_scan_requests(db, settings, trigger="scheduled")
+        db.commit()
 
 
 @asynccontextmanager

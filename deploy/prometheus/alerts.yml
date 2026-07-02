@@ -46,3 +46,12 @@ groups:
         annotations:
           summary: "OCI LIP metrics exporter is unavailable"
           description: "Prometheus has been unable to scrape the OCI LIP API for five minutes."
+
+      - alert: OciLipApiThrottling
+        expr: oci_lip_scan_last_api_throttles > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OCI API throttling observed"
+          description: "The latest {{ $labels.region }} scan observed {{ $value | printf \"%.0f\" }} OCI HTTP 429 responses."
