@@ -168,4 +168,5 @@ Local development uses `DEFAULT` profile by default.
 
 - [Architecture](docs/architecture.md)
 - [Deployment](docs/deployment.md)
+- [Ampere A1 / ARM64 deployment](docs/deployment-arm64.md)
 - [IAM policies](docs/iam.md)

@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: lip
       POSTGRES_USER: lip
-      POSTGRES_PASSWORD: lip-local
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
       context: ./backend
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      DATABASE_URL: postgresql+psycopg://lip:lip-local@postgres:5432/lip
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       OCI_AUTH_MODE: ${OCI_AUTH_MODE:-instance_principal}
       OCI_TENANCY_OCID: ${OCI_TENANCY_OCID:-ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq}
       OCI_DEFAULT_REGION: ${OCI_DEFAULT_REGION:-us-ashburn-1}
@@ -54,7 +54,7 @@ services:
     command: ["python", "-m", "app.worker"]
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      DATABASE_URL: postgresql+psycopg://lip:lip-local@postgres:5432/lip
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       OCI_AUTH_MODE: ${OCI_AUTH_MODE:-instance_principal}
       OCI_TENANCY_OCID: ${OCI_TENANCY_OCID:-ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq}
       OCI_DEFAULT_REGION: ${OCI_DEFAULT_REGION:-us-ashburn-1}

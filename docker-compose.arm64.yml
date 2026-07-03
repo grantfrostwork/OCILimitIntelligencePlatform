@@ -1,0 +1,18 @@
+services:
+  postgres:
+    platform: linux/arm64
+
+  api:
+    platform: linux/arm64
+
+  worker:
+    platform: linux/arm64
+
+  prometheus:
+    platform: linux/arm64
+
+  grafana:
+    platform: linux/arm64
+
+  frontend:
+    platform: linux/arm64
