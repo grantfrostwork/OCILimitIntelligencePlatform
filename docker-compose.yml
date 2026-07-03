@@ -1,6 +1,15 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
+    stop_grace_period: 1m
+    logging: *default-logging
     environment:
       POSTGRES_DB: lip
       POSTGRES_USER: lip
@@ -16,6 +25,10 @@ services:
   api:
     build:
       context: ./backend
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 1m
+    logging: *default-logging
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
@@ -45,6 +58,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     ports:
       - "8000:8000"
 
@@ -52,6 +75,10 @@ services:
     build:
       context: ./backend
     command: ["python", "-m", "app.worker"]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 5m
+    logging: *default-logging
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
@@ -77,15 +104,25 @@ services:
       LIP_METRICS_PUBLISH_TIMEOUT_SECONDS: ${LIP_METRICS_PUBLISH_TIMEOUT_SECONDS:-30}
       LIP_ENABLE_NOTIFICATIONS: ${LIP_ENABLE_NOTIFICATIONS:-false}
       LIP_NOTIFICATION_EMAILS: ${LIP_NOTIFICATION_EMAILS:-["grant.frost@oracle.com"]}
+      LIP_WORKER_HEARTBEAT_PATH: /tmp/oci-lip-worker-heartbeat
       UPLOAD_DIR: /var/lib/oci-lip/uploads
     volumes:
       - uploads:/var/lib/oci-lip/uploads
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
 
   prometheus:
     image: prom/prometheus:v3.12.0
+    restart: unless-stopped
+    stop_grace_period: 1m
+    logging: *default-logging
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -99,11 +136,20 @@ services:
       - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     depends_on:
-      - api
-    restart: unless-stopped
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   grafana:
     image: grafana/grafana-enterprise:13.0.2
+    restart: unless-stopped
+    stop_grace_period: 1m
+    logging: *default-logging
     environment:
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://129.80.114.109/grafana/}
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
@@ -125,15 +171,32 @@ services:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
-      - prometheus
-    restart: unless-stopped
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
       context: ./frontend
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
     depends_on:
-      - api
-      - grafana
+      api:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     ports:
       - "80:80"
 

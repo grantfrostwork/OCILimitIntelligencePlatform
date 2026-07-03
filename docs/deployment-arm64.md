@@ -40,7 +40,7 @@ Run from `/home/opc/oci-lip/app`:
 docker compose -f docker-compose.yml -f docker-compose.arm64.yml build --pull
 docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d postgres
 docker compose -f docker-compose.yml -f docker-compose.arm64.yml run --rm api alembic upgrade head
-docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d
+sudo ./deploy/arm64/install-systemd-service.sh
 ```
 
 Verify the architecture and health checks:
@@ -51,12 +51,47 @@ Verify the architecture and health checks:
 
 Open `http://<public-ip>/` and `http://<public-ip>/grafana/`.
 
+## Restart And Interruption Recovery
+
+The deployment has two recovery layers:
+
+- Every container uses `restart: unless-stopped`, so Docker restarts a crashed process.
+- `oci-lip.service` is enabled at boot and reconstructs the Compose stack after Docker and the
+  network are available. It waits for PostgreSQL, the API, worker, Prometheus, Grafana, and frontend
+  health checks before reporting success, and retries a failed startup every 15 seconds.
+
+PostgreSQL data, uploads, Prometheus history, and Grafana state remain in named Docker volumes. The
+scan schedule and regional allowlist remain in PostgreSQL. When the worker starts, a request that
+was running during an interruption is returned to the queue, while the interrupted scan attempt is
+retained as failed for auditability. The retried scan creates a new attempt.
+
+The worker receives up to five minutes to finish active work during a controlled shutdown. A sudden
+power loss may interrupt the current attempt, but the queue recovery path resumes it after startup.
+Container JSON logs rotate at 10 MB with five files per service to prevent log growth from filling
+the boot volume.
+
+An explicit `docker stop` or `docker kill` is treated by Docker as an operator action and suppresses
+the `unless-stopped` policy. Use `sudo systemctl restart oci-lip.service` to restore an intentionally
+stopped container and revalidate the complete stack.
+
+Useful host commands:
+
+```bash
+sudo systemctl status oci-lip.service
+sudo systemctl restart oci-lip.service
+sudo journalctl -u oci-lip.service -n 100 --no-pager
+docker compose -f docker-compose.yml -f docker-compose.arm64.yml ps
+```
+
 ## Validated Configuration
 
 The ARM deployment was validated in `us-ashburn-1` on `VM.Standard.A1.Flex` with 2 OCPUs and 12 GB
 memory using `Oracle-Linux-9.7-aarch64-2026.06.15-0`. All six containers reported `aarch64`. A
 full instance-principal scan completed successfully across 123 services and 1,814 limits, and the
-resulting metrics were published to the bundled ARM64 Prometheus service.
+resulting metrics were published to the bundled ARM64 Prometheus service. Recovery validation
+included an unexpected worker-process exit during a scan and a full VM reboot. The worker restarted,
+the interrupted request resumed as the next numbered attempt, and the reboot preserved the scan
+history, four-hour schedule, Grafana state, and Prometheus time series without manual intervention.
 
 ## Migrate From X86
 

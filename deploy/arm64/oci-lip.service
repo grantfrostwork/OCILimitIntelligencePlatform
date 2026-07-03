@@ -1,0 +1,28 @@
+[Unit]
+Description=OCI Limit Intelligence Platform
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+StartLimitIntervalSec=0
+ConditionPathExists=/home/opc/oci-lip/app/docker-compose.yml
+ConditionPathExists=/home/opc/oci-lip/app/.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=opc
+Group=opc
+SupplementaryGroups=docker
+WorkingDirectory=/home/opc/oci-lip/app
+ExecStartPre=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml config --quiet
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d --remove-orphans
+ExecStartPost=/usr/bin/bash /home/opc/oci-lip/app/deploy/arm64/wait-for-stack.sh 300
+ExecReload=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml stop --timeout 300
+TimeoutStartSec=360
+TimeoutStopSec=330
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

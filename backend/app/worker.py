@@ -16,6 +16,7 @@ from app.services.scan_queue import (
     recover_interrupted_requests,
 )
 from app.services.schedule import advance_schedule, get_or_create_schedule, schedule_is_due
+from app.worker_health import write_heartbeat
 
 
 logging.basicConfig(
@@ -83,6 +84,7 @@ def main() -> None:
     settings = get_settings()
     init_db()
     _initialize(settings)
+    write_heartbeat()
     running: dict[Future[str], str] = {}
 
     with ThreadPoolExecutor(
@@ -90,6 +92,7 @@ def main() -> None:
         thread_name_prefix="oci-regions",
     ) as executor:
         while not shutdown:
+            write_heartbeat()
             for future in [item for item in running if item.done()]:
                 request_id = running.pop(future)
                 try:

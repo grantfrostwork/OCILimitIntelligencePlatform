@@ -121,13 +121,26 @@ def recover_interrupted_requests(db: Session) -> int:
     interrupted = list(
         db.scalars(select(ScanRequest).where(ScanRequest.status == "running"))
     )
+    running_scans = list(db.scalars(select(ScanRun).where(ScanRun.status == "running")))
+    scans_by_request = {
+        (scan.batch_id, scan.region): scan
+        for scan in sorted(running_scans, key=lambda item: item.started_at)
+    }
     now = utcnow()
     for request in interrupted:
-        request.status = "queued"
-        request.not_before = now
-        request.error_summary = "Recovered after worker restart."
+        interrupted_scan = scans_by_request.get((request.batch_id, request.region))
+        request.attempts_completed += 1
+        request.last_scan_run_id = interrupted_scan.id if interrupted_scan else None
         request.started_at = None
-    running_scans = list(db.scalars(select(ScanRun).where(ScanRun.status == "running")))
+        if request.attempts_completed < request.max_attempts:
+            request.status = "queued"
+            request.not_before = now
+            request.ended_at = None
+            request.error_summary = "Recovered after worker restart."
+        else:
+            request.status = "failed"
+            request.ended_at = now
+            request.error_summary = "Maximum attempts reached after worker restart."
     for scan in running_scans:
         scan.status = "failed"
         scan.current_stage = "failed"

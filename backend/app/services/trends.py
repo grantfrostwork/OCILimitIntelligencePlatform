@@ -9,6 +9,9 @@ from app.core.config import Settings
 from app.models import LimitItem, LimitSnapshot, TrendPrediction, utcnow
 
 
+MAX_PROJECTION_DAYS = 3650.0
+
+
 class TrendService:
     def __init__(self, db: Session, settings: Settings) -> None:
         self.db = db
@@ -51,10 +54,17 @@ class TrendService:
         latest_used = ys[-1]
 
         if slope > 0 and latest_used < warning_value:
-            eta_days = (warning_value - latest_used) / slope
-            projected_at = utcnow() + timedelta(days=eta_days)
-            confidence = "medium" if len(snapshots) >= 8 else "low"
-            summary = f"Usage is increasing by {slope:.2f} units/day."
+            candidate_eta_days = (warning_value - latest_used) / slope
+            if candidate_eta_days <= MAX_PROJECTION_DAYS:
+                eta_days = candidate_eta_days
+                projected_at = utcnow() + timedelta(days=eta_days)
+                confidence = "medium" if len(snapshots) >= 8 else "low"
+                summary = f"Usage is increasing by {slope:.2f} units/day."
+            else:
+                summary = (
+                    f"Usage is increasing by {slope:.2f} units/day, but the warning threshold "
+                    "is beyond the 10-year projection horizon."
+                )
         elif latest_used >= warning_value:
             eta_days = 0
             projected_at = utcnow()
