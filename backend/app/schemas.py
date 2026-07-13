@@ -107,7 +107,14 @@ class LimitItemOut(BaseModel):
     last_percent_used: float | None
     last_collection_status: str
     last_collected_at: datetime | None
+    is_muted: bool
+    muted_at: datetime | None
+    mute_reason: str | None
     criticality: str
+
+
+class LimitMuteRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class AlertOut(BaseModel):
@@ -125,6 +132,7 @@ class AlertOut(BaseModel):
     first_seen_at: datetime
     last_seen_at: datetime
     occurrences: int
+    limit_item_id: str | None
 
 
 class DashboardOut(BaseModel):
@@ -135,6 +143,7 @@ class DashboardOut(BaseModel):
     total_limits_scanned: int
     warning_limits: int
     critical_limits: int
+    muted_limits: int
     services_near_capacity: list[dict]
     top_usage: list[dict]
     recent_trends: list[dict]

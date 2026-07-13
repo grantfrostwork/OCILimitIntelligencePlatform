@@ -10,6 +10,7 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Persistent automatic scan schedule with 10-minute, 30-minute, 4-hour, 24-hour, and 48-hour intervals.
 - Service, region, scope, and limit-level normalization.
 - Warning and critical threshold evaluation.
+- Persistent limit-level alert muting with a restore view and muted-aware risk status.
 - Historical snapshots and simple linear trend projections.
 - OCI Notifications topic/subscription integration for alerts.
 - Operations dashboard with filtering, sorting, pagination, export, service drilldown, alerts, and trend cards.
@@ -125,6 +126,7 @@ without contacting OCI. Useful series include:
 - `oci_lip_limit_available`
 - `oci_lip_limit_usage_percent`
 - `oci_lip_limit_collection_status`
+- `oci_lip_limit_muted`
 - `oci_lip_scan_last_success_timestamp_seconds`
 - `oci_lip_scan_last_api_requests`
 - `oci_lip_scan_last_api_retries`
@@ -132,6 +134,11 @@ without contacting OCI. Useful series include:
 - `oci_lip_region_enabled`
 - `oci_lip_scan_requests`
 - `oci_lip_alerts_open`
+- `oci_lip_limits_muted_total`
+
+`oci_lip_limit_muted` reports `1` for muted rows and `0` for active rows using the same limit identity
+labels as the capacity series. The bundled Prometheus capacity and collection rules exclude rows set
+to `1`, while the raw usage metrics remain available for audit and analysis.
 
 ## Grafana Dashboard
 

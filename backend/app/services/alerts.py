@@ -66,6 +66,9 @@ class AlertService:
         return alert
 
     def evaluate_snapshot(self, limit_item: LimitItem, snapshot: LimitSnapshot) -> None:
+        if limit_item.is_muted:
+            return
+
         if snapshot.collection_status not in {"ok", "unsupported"}:
             self.upsert_alert(
                 alert_type="collection_failed",
@@ -75,7 +78,7 @@ class AlertService:
                 region=limit_item.region,
                 service_name=limit_item.service_name,
                 limit_name=limit_item.limit_name,
-                metadata={"snapshot_id": snapshot.id},
+                metadata={"snapshot_id": snapshot.id, "limit_item_id": limit_item.id},
             )
             return
 
@@ -112,6 +115,8 @@ class AlertService:
     def alert_limit_change(
         self, limit_item: LimitItem, previous_allowed: float | None, current_allowed: float | None
     ) -> None:
+        if limit_item.is_muted:
+            return
         if previous_allowed is None or current_allowed is None or previous_allowed == current_allowed:
             return
         self.upsert_alert(

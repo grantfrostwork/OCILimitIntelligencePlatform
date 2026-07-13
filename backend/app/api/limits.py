@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 from io import StringIO
 from typing import Literal
 
@@ -16,6 +17,7 @@ from app.schemas import (
     AlertOut,
     DashboardOut,
     LimitItemOut,
+    LimitMuteRequest,
     RegionAllowlistUpdate,
     RegionOut,
     ScanEnqueueOut,
@@ -25,12 +27,14 @@ from app.schemas import (
     ScanScheduleUpdate,
 )
 from app.services.alerts import AlertService
+from app.services.muting import mute_limit, unmute_limit
 from app.services.oci_sdk import OciSdkError
 from app.services.regions import RegionService
 from app.services.scan_queue import enqueue_scan_requests
 from app.services.schedule import ALLOWED_SCAN_INTERVALS, get_or_create_schedule, update_schedule
 
 router = APIRouter(prefix="/api", tags=["limits"])
+logger = logging.getLogger(__name__)
 
 
 def _schedule_out(schedule) -> ScanScheduleOut:
@@ -118,6 +122,8 @@ def _enqueue_scan_response(
 
 
 def criticality(item: LimitItem, settings: Settings) -> str:
+    if item.is_muted:
+        return "muted"
     if item.last_collection_status not in {"ok", "unsupported"}:
         return "error"
     if item.last_percent_used is None:
@@ -145,6 +151,9 @@ def limit_to_out(item: LimitItem, settings: Settings) -> LimitItemOut:
         last_percent_used=item.last_percent_used,
         last_collection_status=item.last_collection_status,
         last_collected_at=item.last_collected_at,
+        is_muted=item.is_muted,
+        muted_at=item.muted_at,
+        mute_reason=item.mute_reason,
         criticality=criticality(item, settings),
     )
 
@@ -158,8 +167,13 @@ def _limits_query(
     min_percent: float | None,
     level: str | None,
     near_limit: bool,
+    mute_state: Literal["all", "active", "muted"],
 ):
     query = select(LimitItem)
+    if mute_state == "active":
+        query = query.where(LimitItem.is_muted.is_(False))
+    elif mute_state == "muted":
+        query = query.where(LimitItem.is_muted.is_(True))
     if service:
         query = query.where(LimitItem.service_name == service)
     if region:
@@ -176,20 +190,36 @@ def _limits_query(
     if min_percent is not None:
         query = query.where(LimitItem.last_percent_used >= min_percent)
     if near_limit:
-        query = query.where(LimitItem.last_percent_used >= settings.warning_threshold_percent)
+        query = query.where(
+            LimitItem.is_muted.is_(False),
+            LimitItem.last_percent_used >= settings.warning_threshold_percent,
+        )
     if level == "critical":
-        query = query.where(LimitItem.last_percent_used >= settings.critical_threshold_percent)
+        query = query.where(
+            LimitItem.is_muted.is_(False),
+            LimitItem.last_percent_used >= settings.critical_threshold_percent,
+        )
     elif level == "warning":
         query = query.where(
+            LimitItem.is_muted.is_(False),
             LimitItem.last_percent_used >= settings.warning_threshold_percent,
             LimitItem.last_percent_used < settings.critical_threshold_percent,
         )
     elif level == "normal":
-        query = query.where(LimitItem.last_percent_used < settings.warning_threshold_percent)
+        query = query.where(
+            LimitItem.is_muted.is_(False),
+            LimitItem.last_percent_used < settings.warning_threshold_percent,
+        )
     elif level == "error":
-        query = query.where(LimitItem.last_collection_status == "failed")
+        query = query.where(
+            LimitItem.is_muted.is_(False),
+            LimitItem.last_collection_status == "failed",
+        )
     elif level == "unknown":
-        query = query.where(LimitItem.last_percent_used.is_(None))
+        query = query.where(
+            LimitItem.is_muted.is_(False),
+            LimitItem.last_percent_used.is_(None),
+        )
     return query
 
 
@@ -203,12 +233,15 @@ def list_limits(
     min_percent: float | None = None,
     level: str | None = Query(None, pattern="^(normal|warning|critical|error|unknown)$"),
     near_limit: bool = False,
+    mute_state: Literal["all", "active", "muted"] = "all",
     sort_by: str = Query("last_percent_used"),
     sort_dir: Literal["asc", "desc"] = "desc",
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
 ) -> dict:
-    base = _limits_query(db, settings, service, region, q, min_percent, level, near_limit)
+    base = _limits_query(
+        db, settings, service, region, q, min_percent, level, near_limit, mute_state
+    )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
 
     sort_columns = {
@@ -244,8 +277,11 @@ def export_limits(
     q: str | None = None,
     level: str | None = None,
     near_limit: bool = False,
+    mute_state: Literal["all", "active", "muted"] = "all",
 ) -> StreamingResponse:
-    query = _limits_query(db, settings, service, region, q, None, level, near_limit)
+    query = _limits_query(
+        db, settings, service, region, q, None, level, near_limit, mute_state
+    )
     rows = list(db.scalars(query.order_by(LimitItem.service_name, LimitItem.limit_name)))
     buffer = StringIO()
     writer = csv.writer(buffer)
@@ -263,6 +299,9 @@ def export_limits(
             "status",
             "last_updated",
             "criticality",
+            "muted",
+            "muted_at",
+            "mute_reason",
         ]
     )
     for item in rows:
@@ -280,6 +319,9 @@ def export_limits(
                 item.last_collection_status,
                 item.last_collected_at,
                 criticality(item, settings),
+                item.is_muted,
+                item.muted_at,
+                item.mute_reason,
             ]
         )
     buffer.seek(0)
@@ -300,9 +342,13 @@ def list_services(db: Session = Depends(get_db)) -> dict:
 @router.get("/dashboard", response_model=DashboardOut)
 def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> DashboardOut:
     total = db.scalar(select(func.count(LimitItem.id))) or 0
+    muted = (
+        db.scalar(select(func.count(LimitItem.id)).where(LimitItem.is_muted.is_(True))) or 0
+    )
     at_capacity = (
         db.scalar(
             select(func.count(LimitItem.id)).where(
+                LimitItem.is_muted.is_(False),
                 LimitItem.last_allowed_limit.is_not(None),
                 or_(
                     LimitItem.last_percent_used >= 100,
@@ -323,6 +369,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
     near_capacity = (
         db.scalar(
             select(func.count(LimitItem.id)).where(
+                LimitItem.is_muted.is_(False),
                 LimitItem.last_percent_used >= settings.warning_threshold_percent,
                 LimitItem.last_percent_used < 100,
             )
@@ -345,6 +392,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
     warning = (
         db.scalar(
             select(func.count(LimitItem.id)).where(
+                LimitItem.is_muted.is_(False),
                 LimitItem.last_percent_used >= settings.warning_threshold_percent,
                 LimitItem.last_percent_used < settings.critical_threshold_percent,
             )
@@ -354,6 +402,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
     critical = (
         db.scalar(
             select(func.count(LimitItem.id)).where(
+                LimitItem.is_muted.is_(False),
                 LimitItem.last_percent_used >= settings.critical_threshold_percent
             )
         )
@@ -364,7 +413,10 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
         limit_to_out(item, settings).model_dump(mode="json")
         for item in db.scalars(
             select(LimitItem)
-            .where(LimitItem.last_percent_used.is_not(None))
+            .where(
+                LimitItem.is_muted.is_(False),
+                LimitItem.last_percent_used.is_not(None),
+            )
             .order_by(desc(LimitItem.last_percent_used))
             .limit(10)
         )
@@ -374,7 +426,10 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
         {"service_name": service, "count": count}
         for service, count in db.execute(
             select(LimitItem.service_name, func.count(LimitItem.id))
-            .where(LimitItem.last_percent_used >= settings.warning_threshold_percent)
+            .where(
+                LimitItem.is_muted.is_(False),
+                LimitItem.last_percent_used >= settings.warning_threshold_percent,
+            )
             .group_by(LimitItem.service_name)
             .order_by(desc(func.count(LimitItem.id)))
             .limit(10)
@@ -391,7 +446,11 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
             "summary": prediction.summary,
         }
         for prediction in db.scalars(
-            select(TrendPrediction).order_by(desc(TrendPrediction.calculated_at)).limit(10)
+            select(TrendPrediction)
+            .join(LimitItem, TrendPrediction.limit_item_id == LimitItem.id)
+            .where(LimitItem.is_muted.is_(False))
+            .order_by(desc(TrendPrediction.calculated_at))
+            .limit(10)
         )
     ]
 
@@ -404,6 +463,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
         total_limits_scanned=total,
         warning_limits=warning,
         critical_limits=critical,
+        muted_limits=muted,
         services_near_capacity=services_near_capacity,
         top_usage=top_usage,
         recent_trends=recent_trends,
@@ -521,13 +581,60 @@ def scan_runs(db: Session = Depends(get_db), limit: int = Query(20, ge=1, le=100
 @router.get("/alerts", response_model=list[AlertOut])
 def list_alerts(
     db: Session = Depends(get_db),
-    status: str | None = Query(None, pattern="^(open|closed)$"),
+    status: str | None = Query(None, pattern="^(open|closed|muted)$"),
     limit: int = Query(100, ge=1, le=500),
 ) -> list[Alert]:
     query = select(Alert).order_by(desc(Alert.last_seen_at)).limit(limit)
     if status:
         query = select(Alert).where(Alert.status == status).order_by(desc(Alert.last_seen_at)).limit(limit)
     return list(db.scalars(query))
+
+
+@router.post("/limits/{limit_item_id}/mute", response_model=LimitItemOut)
+def mute_limit_alerts(
+    limit_item_id: str,
+    payload: LimitMuteRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> LimitItemOut:
+    limit_item = db.get(LimitItem, limit_item_id)
+    if not limit_item:
+        raise HTTPException(status_code=404, detail="Limit not found")
+    mute_limit(db, limit_item, payload.reason)
+    db.commit()
+    logger.info(
+        "limit alerts muted",
+        extra={
+            "limit_item_id": limit_item.id,
+            "region": limit_item.region,
+            "service_name": limit_item.service_name,
+            "limit_name": limit_item.limit_name,
+        },
+    )
+    return limit_to_out(limit_item, settings)
+
+
+@router.post("/limits/{limit_item_id}/unmute", response_model=LimitItemOut)
+def unmute_limit_alerts(
+    limit_item_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> LimitItemOut:
+    limit_item = db.get(LimitItem, limit_item_id)
+    if not limit_item:
+        raise HTTPException(status_code=404, detail="Limit not found")
+    unmute_limit(db, limit_item, settings)
+    db.commit()
+    logger.info(
+        "limit alerts re-enabled",
+        extra={
+            "limit_item_id": limit_item.id,
+            "region": limit_item.region,
+            "service_name": limit_item.service_name,
+            "limit_name": limit_item.limit_name,
+        },
+    )
+    return limit_to_out(limit_item, settings)
 
 
 @router.post("/alerts/{alert_id}/resolve", response_model=AlertOut)

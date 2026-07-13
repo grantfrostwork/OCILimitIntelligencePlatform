@@ -1,4 +1,4 @@
-export type Criticality = "normal" | "warning" | "critical" | "error" | "unknown";
+export type Criticality = "normal" | "warning" | "critical" | "error" | "unknown" | "muted";
 
 export interface ScanRun {
   id: string;
@@ -75,6 +75,9 @@ export interface LimitItem {
   last_percent_used: number | null;
   last_collection_status: string;
   last_collected_at: string | null;
+  is_muted: boolean;
+  muted_at: string | null;
+  mute_reason: string | null;
   criticality: Criticality;
 }
 
@@ -86,6 +89,7 @@ export interface Dashboard {
   total_limits_scanned: number;
   warning_limits: number;
   critical_limits: number;
+  muted_limits: number;
   services_near_capacity: { service_name: string; count: number }[];
   top_usage: LimitItem[];
   recent_trends: {
@@ -112,6 +116,7 @@ export interface Alert {
   first_seen_at: string;
   last_seen_at: string;
   occurrences: number;
+  limit_item_id: string | null;
 }
 
 export interface BomDocument {

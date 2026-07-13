@@ -26,6 +26,7 @@ export interface LimitQuery {
   q?: string;
   level?: string;
   near_limit?: boolean;
+  mute_state?: "all" | "active" | "muted";
   sort_by?: string;
   sort_dir?: "asc" | "desc";
   page?: number;
@@ -59,6 +60,24 @@ export function getServices() {
 
 export function getAlerts() {
   return request<Alert[]>("/api/alerts?status=open");
+}
+
+export function getMutedLimits() {
+  return getLimits({ mute_state: "muted", sort_by: "last_percent_used", page_size: 500 });
+}
+
+export function muteLimit(limitItemId: string) {
+  return request<LimitItem>(`/api/limits/${encodeURIComponent(limitItemId)}/mute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: "Muted from the LIP operations dashboard." }),
+  });
+}
+
+export function unmuteLimit(limitItemId: string) {
+  return request<LimitItem>(`/api/limits/${encodeURIComponent(limitItemId)}/unmute`, {
+    method: "POST",
+  });
 }
 
 export function getScanRuns() {

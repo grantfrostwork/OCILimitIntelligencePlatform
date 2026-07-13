@@ -309,7 +309,7 @@ main {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1120px;
+  min-width: 1200px;
 }
 
 th,
@@ -359,6 +359,11 @@ tr.row-critical {
 
 tr.row-error {
   background: #f7f0ff;
+}
+
+tr.row-muted {
+  background: #f4f5f4;
+  color: #52605d;
 }
 
 .usage-cell {
@@ -422,6 +427,17 @@ tr.row-error {
   background: #eef2f1;
 }
 
+.badge-muted {
+  color: #4d5855;
+  background: #e3e7e5;
+}
+
+.actions-column {
+  width: 72px;
+  text-align: center;
+  cursor: default;
+}
+
 .pagination {
   justify-content: space-between;
   margin-top: 14px;
@@ -446,6 +462,40 @@ tr.row-error {
   gap: 10px;
 }
 
+.alert-tabs {
+  display: flex;
+  gap: 20px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid #e0e7e5;
+}
+
+.alert-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--neutral-100);
+  padding: 8px 0 9px;
+  font-weight: 700;
+}
+
+.alert-tabs button.active {
+  border-bottom-color: var(--oracle-red);
+  color: var(--pine-170);
+}
+
+.alert-tabs span {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: #edf1ef;
+  color: #52605d;
+  font-size: 11px;
+}
+
 .alert-item,
 .trend-item,
 .recommendation {
@@ -461,6 +511,31 @@ tr.row-error {
 .recommendation strong {
   display: block;
   font-size: 14px;
+}
+
+.alert-item-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.alert-item-heading strong {
+  min-width: 0;
+}
+
+.alert-mute-button {
+  width: 32px;
+  min-width: 32px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.restore-alert-button {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
 }
 
 .alert-item p,
@@ -487,6 +562,11 @@ tr.row-error {
 .alert-warning {
   border-color: #e6be73;
   background: #fffaf0;
+}
+
+.alert-muted {
+  border-color: #cbd3d0;
+  background: #f5f6f5;
 }
 
 .service-risk-list button {

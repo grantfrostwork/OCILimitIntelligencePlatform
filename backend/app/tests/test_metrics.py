@@ -120,6 +120,7 @@ def test_prometheus_metrics_export_limit_and_scan_state():
         if line.startswith("oci_lip_limit_used{") and 'limit_name="dynamic-core-count"' in line
     )
     assert dynamic_used.endswith(" 17.0")
+    assert 'oci_lip_limit_muted{' in output
     assert not any(
         line.startswith(("oci_lip_limit_allowed{", "oci_lip_limit_usage_percent{"))
         and 'limit_name="dynamic-core-count"' in line
@@ -128,6 +129,7 @@ def test_prometheus_metrics_export_limit_and_scan_state():
     assert 'oci_lip_limit_collection_status{' in output
     assert 'status="ok"' in output
     assert 'oci_lip_alerts_open{severity="warning"} 1.0' in output
+    assert "oci_lip_limits_muted_total 0.0" in output
     assert 'oci_lip_scan_last_success_timestamp_seconds{region="us-ashburn-1"}' in output
     assert 'oci_lip_scan_last_api_requests{region="us-ashburn-1"} 75.0' in output
     assert 'oci_lip_scan_last_api_retries{region="us-ashburn-1"} 3.0' in output

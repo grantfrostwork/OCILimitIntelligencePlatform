@@ -153,6 +153,9 @@ class LimitItem(Base):
     last_percent_used: Mapped[float | None] = mapped_column(Float, index=True)
     last_collection_status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
     last_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    is_muted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    muted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mute_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -219,6 +222,11 @@ class Alert(Base):
     metadata_json: Mapped[dict | None] = mapped_column(JSON)
 
     events: Mapped[list["AlertEvent"]] = relationship(back_populates="alert")
+
+    @property
+    def limit_item_id(self) -> str | None:
+        value = (self.metadata_json or {}).get("limit_item_id")
+        return value if isinstance(value, str) else None
 
 
 class AlertEvent(Base):

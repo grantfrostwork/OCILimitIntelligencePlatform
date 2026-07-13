@@ -4,6 +4,8 @@ import {
   ArrowDownAZ,
   ArrowUpAZ,
   Bell,
+  BellOff,
+  BellRing,
   CheckSquare,
   ChevronDown,
   ChevronUp,
@@ -38,13 +40,16 @@ import {
   getDashboard,
   getLimits,
   getMonitoredRegions,
+  getMutedLimits,
   getScanSchedule,
   getScanRuns,
   getServices,
   saveRegionAllowlist,
   saveScanSchedule,
+  muteLimit,
   triggerScan,
   triggerRegionScan,
+  unmuteLimit,
   uploadBom,
 } from "./api";
 import type {
@@ -156,6 +161,7 @@ export default function App() {
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [totalLimits, setTotalLimits] = useState(0);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [mutedLimits, setMutedLimits] = useState<LimitItem[]>([]);
   const [scanRuns, setScanRuns] = useState<ScanRun[]>([]);
   const [scanSchedule, setScanSchedule] = useState<ScanSchedule | null>(null);
   const [monitoredRegions, setMonitoredRegions] = useState<MonitoredRegion[]>([]);
@@ -178,6 +184,8 @@ export default function App() {
   const [discoveringRegions, setDiscoveringRegions] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [regionsExpanded, setRegionsExpanded] = useState(false);
+  const [alertTab, setAlertTab] = useState<"open" | "muted">("open");
+  const [updatingMuteIds, setUpdatingMuteIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const regionDraftDirty = useRef(false);
 
@@ -212,10 +220,20 @@ export default function App() {
     if (showSpinner) setLoading(true);
     setError("");
     try {
-      const [dashboardData, limitData, alertData, scanData, serviceData, regionData, scheduleData] = await Promise.all([
+      const [
+        dashboardData,
+        limitData,
+        alertData,
+        mutedData,
+        scanData,
+        serviceData,
+        regionData,
+        scheduleData,
+      ] = await Promise.all([
         getDashboard(),
         getLimits(queryParams),
         getAlerts(),
+        getMutedLimits(),
         getScanRuns(),
         getServices(),
         getMonitoredRegions(),
@@ -225,6 +243,7 @@ export default function App() {
       setLimits(limitData.items);
       setTotalLimits(limitData.total);
       setAlerts(alertData);
+      setMutedLimits(mutedData.items);
       setScanRuns(scanData);
       setServices(serviceData.services);
       setRegions(serviceData.regions);
@@ -258,6 +277,23 @@ export default function App() {
     } else {
       setSortBy(field);
       setSortDir("desc");
+    }
+  }
+
+  async function updateLimitMute(limitItemId: string, shouldMute: boolean) {
+    setUpdatingMuteIds((current) => [...current, limitItemId]);
+    setError("");
+    try {
+      if (shouldMute) {
+        await muteLimit(limitItemId);
+      } else {
+        await unmuteLimit(limitItemId);
+      }
+      await refresh(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update alert mute state.");
+    } finally {
+      setUpdatingMuteIds((current) => current.filter((item) => item !== limitItemId));
     }
   }
 
@@ -450,6 +486,7 @@ export default function App() {
         <div className="status-counts">
           <span>{fmtNumber(dashboard?.limits_at_capacity ?? 0)} at capacity</span>
           <span>{fmtNumber(dashboard?.limits_near_capacity ?? 0)} near limit</span>
+          <span>{fmtNumber(dashboard?.muted_limits ?? 0)} muted</span>
         </div>
       </section>
 
@@ -822,6 +859,7 @@ export default function App() {
                     <th>Scope</th>
                     <th>Status</th>
                     <th onClick={() => changeSort("last_collected_at")}>Updated {sortBy === "last_collected_at" && sortDirIcon(sortDir)}</th>
+                    <th className="actions-column">Alerts</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -851,6 +889,17 @@ export default function App() {
                         <CriticalityBadge value={item.criticality} />
                       </td>
                       <td>{fmtDate(item.last_collected_at)}</td>
+                      <td className="actions-column">
+                        <button
+                          className="button secondary icon-button"
+                          title={item.is_muted ? "Re-enable alerts for this limit" : "Mute alerts for this limit"}
+                          aria-label={item.is_muted ? "Re-enable alerts for this limit" : "Mute alerts for this limit"}
+                          disabled={updatingMuteIds.includes(item.id)}
+                          onClick={() => updateLimitMute(item.id, !item.is_muted)}
+                        >
+                          {item.is_muted ? <BellRing size={16} /> : <BellOff size={16} />}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -906,20 +955,81 @@ export default function App() {
             <div className="panel-header compact">
               <div>
                 <h2>Alerts</h2>
-                <p>Open operational signals</p>
+                <p>Operational signals and exclusions</p>
               </div>
             </div>
+            <div className="alert-tabs" role="tablist" aria-label="Alert views">
+              <button
+                role="tab"
+                aria-selected={alertTab === "open"}
+                className={alertTab === "open" ? "active" : ""}
+                onClick={() => setAlertTab("open")}
+              >
+                Open <span>{alerts.length}</span>
+              </button>
+              <button
+                role="tab"
+                aria-selected={alertTab === "muted"}
+                className={alertTab === "muted" ? "active" : ""}
+                onClick={() => setAlertTab("muted")}
+              >
+                Muted <span>{mutedLimits.length}</span>
+              </button>
+            </div>
             <div className="alert-list">
-              {alerts.length ? (
+              {alertTab === "open" && alerts.length ? (
                 alerts.slice(0, 6).map((alert) => (
                   <div className={`alert-item alert-${alert.severity}`} key={alert.id}>
-                    <strong>{alert.title}</strong>
+                    <div className="alert-item-heading">
+                      <strong>{alert.title}</strong>
+                      {alert.limit_item_id && (
+                        <button
+                          className="button secondary icon-button alert-mute-button"
+                          title="Mute alerts for this limit"
+                          aria-label="Mute alerts for this limit"
+                          disabled={updatingMuteIds.includes(alert.limit_item_id)}
+                          onClick={() => updateLimitMute(alert.limit_item_id as string, true)}
+                        >
+                          <BellOff size={15} />
+                        </button>
+                      )}
+                    </div>
                     <p>{alert.message}</p>
                     <span>{fmtDate(alert.last_seen_at)} · {alert.occurrences}x</span>
                   </div>
                 ))
+              ) : alertTab === "muted" && mutedLimits.length ? (
+                mutedLimits.map((item) => (
+                  <div className="alert-item alert-muted" key={item.id}>
+                    <div className="alert-item-heading">
+                      <strong>{item.service_name} / {item.limit_name}</strong>
+                      <button
+                        className="button secondary restore-alert-button"
+                        disabled={updatingMuteIds.includes(item.id)}
+                        onClick={() => updateLimitMute(item.id, false)}
+                      >
+                        <BellRing size={15} />
+                        Re-enable
+                      </button>
+                    </div>
+                    <p>
+                      {item.region} · {item.scope_type} · {fmtPercent(item.last_percent_used)} used
+                    </p>
+                    <span>
+                      Muted {fmtDate(item.muted_at)}
+                      {item.mute_reason ? ` · ${item.mute_reason}` : ""}
+                    </span>
+                  </div>
+                ))
               ) : (
-                <EmptyState title="No open alerts" detail="Threshold, trend, and scan failures appear here." />
+                <EmptyState
+                  title={alertTab === "open" ? "No open alerts" : "No muted alerts"}
+                  detail={
+                    alertTab === "open"
+                      ? "Threshold, trend, and scan failures appear here."
+                      : "Muted limit alerts can be restored from this tab."
+                  }
+                />
               )}
             </div>
           </div>

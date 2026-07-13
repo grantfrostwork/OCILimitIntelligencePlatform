@@ -30,6 +30,14 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
         registry=registry,
     )
     total_limits.set(db.scalar(select(func.count(LimitItem.id))) or 0)
+    muted_limits = Gauge(
+        "oci_lip_limits_muted_total",
+        "Number of OCI limit rows excluded from capacity alerting by an operator.",
+        registry=registry,
+    )
+    muted_limits.set(
+        db.scalar(select(func.count(LimitItem.id)).where(LimitItem.is_muted.is_(True))) or 0
+    )
 
     warning_threshold = Gauge(
         "oci_lip_warning_threshold_percent",
@@ -86,9 +94,16 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
         [*LIMIT_LABELS, "status"],
         registry=registry,
     )
+    muted = Gauge(
+        "oci_lip_limit_muted",
+        "Whether an OCI limit row is excluded from capacity and collection alerting.",
+        LIMIT_LABELS,
+        registry=registry,
+    )
 
     for item in db.scalars(select(LimitItem)):
         labels = _limit_labels(item)
+        muted.labels(*labels).set(1 if item.is_muted else 0)
         if item.last_allowed_limit is not None:
             allowed.labels(*labels).set(item.last_allowed_limit)
         if item.last_used is not None:
