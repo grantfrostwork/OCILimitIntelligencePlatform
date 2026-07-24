@@ -42,6 +42,11 @@ resource "oci_core_instance" "lip" {
       desired_state = "ENABLED"
       name          = "Compute Instance Run Command"
     }
+
+    plugins_config {
+      desired_state = "ENABLED"
+      name          = "Fleet Application Management Service"
+    }
   }
 
   metadata = {

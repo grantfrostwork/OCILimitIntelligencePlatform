@@ -30,12 +30,9 @@ write_files:
       WantedBy=multi-user.target
 
 runcmd:
-  - dnf config-manager --enable ol9_addons
-  - dnf install -y docker-engine
+  - dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+  - dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable --now docker
-  - mkdir -p /usr/local/lib/docker/cli-plugins
-  - curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64 -o /usr/local/lib/docker/cli-plugins/docker-compose
-  - chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
   - git clone --branch ${repository_branch} --single-branch ${repository_url} /opt/oci-lip
   - |
       POSTGRES_PASSWORD=$(openssl rand -hex 24)
@@ -71,6 +68,7 @@ runcmd:
   - chmod 0600 /opt/oci-lip/.env
   - systemctl daemon-reload
   - systemctl enable --now oci-lip.service
+  - firewall-cmd --permanent --add-service=ssh || true
   - firewall-cmd --permanent --add-service=http || true
   - firewall-cmd --reload || true
 

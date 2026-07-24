@@ -23,6 +23,7 @@ backend/outputs/
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan-*
 terraform.tfvars
 *.auto.tfvars
 crash.log

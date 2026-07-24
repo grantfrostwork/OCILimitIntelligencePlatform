@@ -183,3 +183,24 @@ resource "oci_core_network_security_group_security_rule" "application_ntp_egress
     }
   }
 }
+
+resource "oci_core_network_security_group_security_rule" "application_iscsi_boot_egress" {
+  for_each = toset([
+    "169.254.0.2/32",
+    "169.254.2.0/24",
+  ])
+
+  network_security_group_id = oci_core_network_security_group.application.id
+  direction                 = "EGRESS"
+  protocol                  = "6"
+  destination               = each.value
+  destination_type          = "CIDR_BLOCK"
+  description               = "OCI boot and block volume iSCSI endpoints"
+
+  tcp_options {
+    destination_port_range {
+      min = 3260
+      max = 3260
+    }
+  }
+}

@@ -196,6 +196,13 @@ services:
       retries: 5
       start_period: 30s
 
+  certbot:
+    image: certbot/certbot:v5.6.0
+    profiles: ["operations"]
+    volumes:
+      - acme-challenge:/var/www/acme
+      - letsencrypt:/etc/letsencrypt
+
   frontend:
     build:
       context: ./frontend
@@ -213,6 +220,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    volumes:
+      - acme-challenge:/var/www/acme:ro
     ports:
       - "80:80"
 
@@ -221,3 +230,5 @@ volumes:
   uploads:
   prometheus-data:
   grafana-data:
+  acme-challenge:
+  letsencrypt:
