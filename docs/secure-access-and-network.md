@@ -41,6 +41,17 @@ Configure the ID token or UserInfo response to include the user's IAM group disp
 | `OCI-LIP-Operators` | Operator |
 | `OCI-LIP-Admins` | Admin |
 
+Create a dedicated active sign-on policy for the LIP application. Its allow rule should use the
+domain's intended identity provider and client network scope. Assign only the LIP application to
+this policy. Keep authorization in the application's enforced role grants and LIP's backend RBAC
+instead of duplicating the same group conditions in the sign-on policy.
+
+Do not rely on an unassigned application's implicit use of the Default Sign-On Policy. Customers
+often customize that policy with MFA, network-perimeter, or Keep Me Signed In conditions. If no
+rule matches an OIDC authorization request, Identity Domains returns `Sign-on policy denies access`
+even when the user has the correct application-role grant. The failed-login OCI Audit event contains
+the exact policy evaluation reason and should be the first troubleshooting source.
+
 The backend enforces the role on every API route. NGINX uses the same signed session to protect
 Grafana and passes a verified identity to Grafana's auth-proxy integration. Prometheus remains
 container-internal. Do not treat hidden frontend controls as authorization.
@@ -79,13 +90,24 @@ after validation so only the active root-owned configuration retains the client 
 Authentication fails closed at startup when it is enabled but any OIDC setting, HTTPS public URL,
 secure-cookie setting, or strong session secret is missing.
 
+## DNS and Certificate Hostname
+
+Use a customer-owned DNS name such as `lip.example.com` for production. A wildcard IP-to-name
+service such as `sslip.io` can provide a temporary hostname for bootstrap and demonstration
+environments when no managed DNS zone is available. It only resolves the hostname to the encoded
+public IP; it does not host or proxy LIP.
+
+Treat that dependency as temporary because the customer does not control the zone. Replacing it
+requires updating the DNS record, load-balancer certificate, `AUTH_PUBLIC_URL`, OAuth redirect URI,
+post-logout URL, and any verification contract that pins the application origin.
+
 ## Cutover Sequence
 
 1. Apply the secure stack without a certificate.
 2. Verify cloud-init, all container health checks, and load-balancer backend health.
 3. Migrate the PostgreSQL data and uploads from the existing VM.
 4. Create the DNS record and trusted OCI Certificates certificate.
-5. Configure the Identity Domain OAuth application and LIP groups.
+5. Configure the Identity Domain OAuth application, LIP groups, and dedicated sign-on policy.
 6. Enable authentication in the private VM's `.env`.
 7. Apply the certificate OCID to enable HTTPS and the HTTP redirect.
 8. Validate Viewer, Operator, and Admin behavior.
