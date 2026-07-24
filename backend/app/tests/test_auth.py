@@ -1,5 +1,6 @@
 import pytest
 
+from app.api.auth import _merge_claims
 from app.core.auth import role_from_claims, user_from_claims
 from app.core.config import Settings
 
@@ -49,6 +50,19 @@ def test_nested_group_claim_path_is_supported():
         )
         == "admin"
     )
+
+
+def test_userinfo_claims_extend_validated_id_token_claims():
+    claims = _merge_claims(
+        {"sub": "user-1", "email": "admin@example.com"},
+        {"groups": [{"display": "OCI-LIP-Admins"}]},
+    )
+
+    assert claims == {
+        "sub": "user-1",
+        "email": "admin@example.com",
+        "groups": [{"display": "OCI-LIP-Admins"}],
+    }
 
 
 def test_enabled_authentication_fails_closed_without_oidc_configuration():

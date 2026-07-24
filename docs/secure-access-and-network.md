@@ -27,13 +27,19 @@ Create one confidential OAuth application in the tenancy's IAM Identity Domain:
 | Client type | Confidential |
 | Application model | Unmanaged application |
 | Access control | Enforce grants as authorization |
+| Bypass consent | Enabled |
 
 Create an `OCI LIP Access` application role that is available to groups, then grant that role to
 the three LIP groups below. The `approles` scope is required for Oracle IAM to evaluate the
 application-role grant and return the group context used by LIP.
 
-Configure the ID token or UserInfo response to include the user's IAM group display names in the
-`groups` claim. LIP maps the highest matching group to its application role:
+Under the Identity Domain's default settings, enable public access to the signing certificate.
+This makes the public JWKS in the discovery document readable so LIP can verify ID-token signatures.
+It does not expose a private signing key.
+
+The backend merges the validated ID-token claims with Oracle's UserInfo response. The `groups`
+scope returns the user's IAM group display names through UserInfo, and LIP maps the highest matching
+group to its application role:
 
 | Identity Domain group | Role |
 | --- | --- |
@@ -51,6 +57,10 @@ often customize that policy with MFA, network-perimeter, or Keep Me Signed In co
 rule matches an OIDC authorization request, Identity Domains returns `Sign-on policy denies access`
 even when the user has the correct application-role grant. The failed-login OCI Audit event contains
 the exact policy evaluation reason and should be the first troubleshooting source.
+
+Enable **Bypass consent** on the LIP OAuth client. Otherwise Identity Domains routes every login
+through its built-in consent application, which is evaluated against the domain-wide default sign-on
+policy instead of LIP's dedicated policy.
 
 The backend enforces the role on every API route. NGINX uses the same signed session to protect
 Grafana and passes a verified identity to Grafana's auth-proxy integration. Prometheus remains

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping
 from functools import lru_cache
+from typing import Any
 from urllib.parse import urljoin
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
+from httpx import HTTPError
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, get_current_user, user_from_claims
@@ -14,6 +18,7 @@ from app.core.database import get_db
 from app.models import AuditLog
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=4)
@@ -51,6 +56,14 @@ def _safe_next(value: str | None) -> str:
     return value
 
 
+def _merge_claims(*sources: object) -> dict[str, Any]:
+    claims: dict[str, Any] = {}
+    for source in sources:
+        if isinstance(source, Mapping):
+            claims.update(source)
+    return claims
+
+
 @router.get("/login")
 async def login(
     request: Request,
@@ -70,16 +83,22 @@ async def callback(
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ):
+    client = _client(settings)
     try:
-        token = await _client(settings).authorize_access_token(request)
-    except OAuthError:
+        token = await client.authorize_access_token(request)
+    except (HTTPError, OAuthError) as exc:
+        logger.warning("OIDC token exchange failed: %s", type(exc).__name__)
         request.session.clear()
         return RedirectResponse(url="/?auth_error=login_failed", status_code=303)
 
-    claims = token.get("userinfo")
-    if not isinstance(claims, dict):
-        claims = await _client(settings).userinfo(token=token)
-    user = user_from_claims(dict(claims), settings)
+    id_token_claims = token.get("userinfo")
+    try:
+        userinfo_claims = await client.userinfo(token=token)
+    except (HTTPError, OAuthError) as exc:
+        logger.warning("OIDC UserInfo request failed: %s", type(exc).__name__)
+        userinfo_claims = None
+    claims = _merge_claims(id_token_claims, userinfo_claims)
+    user = user_from_claims(claims, settings)
     if user is None:
         db.add(
             AuditLog(
