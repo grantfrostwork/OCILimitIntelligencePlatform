@@ -41,7 +41,7 @@ resource "oci_load_balancer_rule_set" "https_redirect" {
   count = var.certificate_id == "" ? 0 : 1
 
   load_balancer_id = oci_load_balancer_load_balancer.lip.id
-  name             = "redirect-to-https"
+  name             = "redirect_to_https"
 
   items {
     action        = "REDIRECT"
@@ -90,5 +90,6 @@ resource "oci_load_balancer_listener" "https" {
     protocols               = ["TLSv1.2", "TLSv1.3"]
     cipher_suite_name       = "oci-default-ssl-cipher-suite-v1"
     server_order_preference = "ENABLED"
+    verify_peer_certificate = false
   }
 }

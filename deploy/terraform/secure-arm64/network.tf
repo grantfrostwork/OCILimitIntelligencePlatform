@@ -24,6 +24,18 @@ resource "oci_core_security_list" "private_empty" {
   vcn_id         = var.vcn_id
   display_name   = "oci-lip-private-empty-security-list"
   freeform_tags  = local.common_tags
+
+  egress_security_rules {
+    protocol         = "6"
+    destination      = var.private_subnet_cidr
+    destination_type = "CIDR_BLOCK"
+    description      = "OCI Bastion private endpoint to application SSH"
+
+    tcp_options {
+      min = 22
+      max = 22
+    }
+  }
 }
 
 resource "oci_core_subnet" "private" {

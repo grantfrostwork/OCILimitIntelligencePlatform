@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     auth_oidc_discovery_url: str | None = None
     auth_oidc_client_id: str | None = None
     auth_oidc_client_secret: str | None = None
-    auth_oidc_scopes: str = "openid profile email groups"
+    auth_oidc_scopes: str = "openid profile email approles groups"
     auth_group_claim: str = "groups"
     auth_viewer_groups: list[str] = Field(
         default_factory=lambda: ["OCI-LIP-Viewers"]

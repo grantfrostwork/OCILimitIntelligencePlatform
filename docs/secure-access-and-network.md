@@ -23,8 +23,14 @@ Create one confidential OAuth application in the tenancy's IAM Identity Domain:
 | Grant type | Authorization code |
 | Redirect URI | `https://<lip-fqdn>/api/auth/callback` |
 | Post-logout URL | `https://<lip-fqdn>/` |
-| Scopes | `openid profile email groups` |
+| Scopes | `openid profile email approles groups` |
 | Client type | Confidential |
+| Application model | Unmanaged application |
+| Access control | Enforce grants as authorization |
+
+Create an `OCI LIP Access` application role that is available to groups, then grant that role to
+the three LIP groups below. The `approles` scope is required for Oracle IAM to evaluate the
+application-role grant and return the group context used by LIP.
 
 Configure the ID token or UserInfo response to include the user's IAM group display names in the
 `groups` claim. LIP maps the highest matching group to its application role:
@@ -53,12 +59,22 @@ AUTH_COOKIE_SECURE=true
 AUTH_OIDC_DISCOVERY_URL=https://<identity-domain>/.well-known/openid-configuration
 AUTH_OIDC_CLIENT_ID=<confidential-application-client-id>
 AUTH_OIDC_CLIENT_SECRET=<confidential-application-client-secret>
-AUTH_OIDC_SCOPES="openid profile email groups"
+AUTH_OIDC_SCOPES="openid profile email approles groups"
 AUTH_GROUP_CLAIM=groups
 AUTH_VIEWER_GROUPS=["OCI-LIP-Viewers"]
 AUTH_OPERATOR_GROUPS=["OCI-LIP-Operators"]
 AUTH_ADMIN_GROUPS=["OCI-LIP-Admins"]
 ```
+
+Apply secret-bearing updates from a mode `0600` fragment instead of placing values in shell
+arguments:
+
+```bash
+sudo ./deploy/arm64/apply-env-fragment.sh /opt/oci-lip/.env /run/secrets/oci-lip-oidc.env
+```
+
+The helper writes a timestamped rollback copy. Remove the fragment and obsolete rollback copies
+after validation so only the active root-owned configuration retains the client secret.
 
 Authentication fails closed at startup when it is enabled but any OIDC setting, HTTPS public URL,
 secure-cookie setting, or strong session secret is missing.
