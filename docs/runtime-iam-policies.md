@@ -68,6 +68,44 @@ permission required for resource availability.
 The scanner does not require permissions to manage Compute, networking, compartments, databases,
 quotas, limit-increase requests, or `all-resources`.
 
+## Public IP Certificate Renewal Policy
+
+When automated Let's Encrypt IP certificate renewal is enabled, the renewal container uses the
+VM's instance principal to stage a new imported certificate version, list versions, promote the
+new version to `CURRENT`, and roll back to the previous version if load-balancer verification
+fails.
+
+For steady-state renewal, scope access to the one OCI Certificates resource:
+
+```text
+Allow dynamic-group lip-runtime to use leaf-certificates in compartment OCI-LIP
+  where target.leaf-certificate.id = '<lip-certificate-ocid>'
+Allow dynamic-group lip-runtime to inspect leaf-certificate-versions in compartment OCI-LIP
+  where target.leaf-certificate.id = '<lip-certificate-ocid>'
+```
+
+`use leaf-certificates` supplies `CERTIFICATE_READ` and `CERTIFICATE_UPDATE`.
+`inspect leaf-certificate-versions` supplies `CERTIFICATE_VERSION_INSPECT`, which is required to
+find the staged version by its unique version name before promotion.
+
+The first certificate import additionally requires `CERTIFICATE_CREATE`. If the deployment
+principal does not perform the first import, grant this temporary bootstrap statement:
+
+```text
+Allow dynamic-group lip-runtime to manage leaf-certificates in compartment OCI-LIP
+  where all {request.permission = 'CERTIFICATE_CREATE',
+             target.leaf-certificate.name = '<lip-certificate-name>'}
+```
+
+Remove the bootstrap statement after `LIP_CERTIFICATE_ID` is populated. Imported certificates do
+not require a certificate-authority delegate, Vault key, or CA policy. The runtime also does not
+need Load Balancer permissions: the HTTPS listener remains associated with one certificate OCID,
+and the Load Balancer service consumes the version marked `CURRENT`.
+
+Do not grant the runtime permission to read `leaf-certificate-bundles` with
+`CERTIFICATE_CONTENT_WITH_PRIVATE_KEY`. Certbot keeps the private key in its root-owned Docker
+volume, and the renewal container only uploads it during the Certificates API update.
+
 ## Optional Notifications Policy
 
 No Notifications permissions are required when `LIP_ENABLE_NOTIFICATIONS=false`.
@@ -146,5 +184,6 @@ For customers with strict separation of duties, split deployment into:
 - [OCI Service Limits IAM requirements](https://docs.oracle.com/en-us/iaas/Content/General/service-limits/overview.htm)
 - [OCI IAM operation permissions](https://docs.oracle.com/en-us/iaas/Content/Identity/policyreference/iampolicyreference.htm)
 - [OCI Notifications policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/policyreference/notificationpolicyreference.htm)
+- [OCI Certificates policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/Reference/certificatespolicyreference.htm)
 - [OCI dynamic groups](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/managingdynamicgroups.htm)
 - [OCI Vault policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/Reference/keypolicyreference.htm)

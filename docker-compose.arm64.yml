@@ -14,5 +14,8 @@ services:
   grafana:
     platform: linux/arm64
 
+  certbot:
+    platform: linux/arm64
+
   frontend:
     platform: linux/arm64

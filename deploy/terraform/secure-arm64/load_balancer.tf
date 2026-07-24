@@ -37,43 +37,13 @@ resource "oci_load_balancer_backend" "lip" {
   weight           = 1
 }
 
-resource "oci_load_balancer_rule_set" "https_redirect" {
-  count = var.certificate_id == "" ? 0 : 1
-
-  load_balancer_id = oci_load_balancer_load_balancer.lip.id
-  name             = "redirect_to_https"
-
-  items {
-    action        = "REDIRECT"
-    response_code = 301
-
-    conditions {
-      attribute_name  = "PATH"
-      attribute_value = "/"
-      operator        = "FORCE_LONGEST_PREFIX_MATCH"
-    }
-
-    redirect_uri {
-      protocol = "HTTPS"
-      port     = 443
-      host     = "{host}"
-      path     = "{path}"
-      query    = "{query}"
-    }
-  }
-}
-
 resource "oci_load_balancer_listener" "http" {
   load_balancer_id         = oci_load_balancer_load_balancer.lip.id
   name                     = "http"
   default_backend_set_name = oci_load_balancer_backend_set.lip.name
   port                     = 80
   protocol                 = "HTTP"
-  rule_set_names = (
-    var.certificate_id == ""
-    ? []
-    : [oci_load_balancer_rule_set.https_redirect[0].name]
-  )
+  rule_set_names           = []
 }
 
 resource "oci_load_balancer_listener" "https" {

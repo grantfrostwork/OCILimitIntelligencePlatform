@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import oci
@@ -7,9 +8,8 @@ from prometheus_client import CollectorRegistry, Gauge, generate_latest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun, ScanSchedule
-
 
 LIMIT_LABELS = ["region", "service", "limit_name", "scope", "availability_domain"]
 
@@ -122,7 +122,7 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
     return generate_latest(registry)
 
 
-def render_health_metrics(db: Session) -> bytes:
+def render_health_metrics(db: Session, settings: Settings | None = None) -> bytes:
     registry = CollectorRegistry()
     info = Gauge(
         "oci_lip_exporter_info",
@@ -132,7 +132,73 @@ def render_health_metrics(db: Session) -> bytes:
     )
     info.labels(oci.__version__).set(1)
     _render_schedule_metrics(db, registry)
+    _render_certificate_metrics(registry, settings or get_settings())
     return generate_latest(registry)
+
+
+def _render_certificate_metrics(
+    registry: CollectorRegistry,
+    settings: Settings,
+) -> None:
+    not_after = Gauge(
+        "oci_lip_tls_certificate_not_after_timestamp_seconds",
+        "Unix timestamp when the public OCI LIP TLS certificate expires.",
+        registry=registry,
+    )
+    days_remaining = Gauge(
+        "oci_lip_tls_certificate_days_remaining",
+        "Days remaining before the public OCI LIP TLS certificate expires.",
+        registry=registry,
+    )
+    last_success = Gauge(
+        "oci_lip_tls_certificate_last_publish_success_timestamp_seconds",
+        "Unix timestamp of the last successful OCI certificate publication.",
+        registry=registry,
+    )
+    publish_success = Gauge(
+        "oci_lip_tls_certificate_publish_success",
+        "Whether the latest OCI certificate publication succeeded.",
+        registry=registry,
+    )
+    failures = Gauge(
+        "oci_lip_tls_certificate_publish_failures_total",
+        "Persisted count of OCI certificate publication failures.",
+        registry=registry,
+    )
+    endpoint_verified = Gauge(
+        "oci_lip_tls_certificate_endpoint_verified",
+        "Whether the load balancer served the expected certificate after publication.",
+        registry=registry,
+    )
+
+    try:
+        status = json.loads(settings.lip_certificate_status_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        publish_success.set(0)
+        endpoint_verified.set(0)
+        failures.set(0)
+        return
+
+    publish_success.set(0 if status.get("last_error") else 1)
+    endpoint_verified.set(1 if status.get("endpoint_verified") else 0)
+    failures.set(float(status.get("failure_count", 0)))
+    if value := _parse_status_timestamp(status.get("last_success_timestamp")):
+        last_success.set(_timestamp(value))
+    if value := _parse_status_timestamp(status.get("not_after")):
+        not_after.set(_timestamp(value))
+        days_remaining.set(max(0, (value - datetime.now(UTC)).total_seconds() / 86400))
+
+
+def _parse_status_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _render_alert_metrics(db: Session, registry: CollectorRegistry) -> None:

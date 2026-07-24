@@ -100,6 +100,59 @@ after validation so only the active root-owned configuration retains the client 
 Authentication fails closed at startup when it is enabled but any OIDC setting, HTTPS public URL,
 secure-cookie setting, or strong session secret is missing.
 
+## Public IP TLS and Automatic Renewal
+
+LIP can use a reserved load-balancer IPv4 address as its only public origin. Let's Encrypt IP
+certificates use the `shortlived` profile and are valid for 160 hours, so automatic renewal is
+mandatory.
+
+Set these values in the private VM's root-owned `.env`:
+
+```bash
+AUTH_PUBLIC_URL=https://<load-balancer-ip>
+CORS_ORIGINS=["https://<load-balancer-ip>"]
+GRAFANA_ROOT_URL=https://<load-balancer-ip>/grafana/
+LETSENCRYPT_EMAIL=<operations-email>
+LIP_CERTIFICATE_IP=<load-balancer-ip>
+LIP_CERTIFICATE_ID=<oci-certificate-ocid>
+LIP_CERTIFICATE_NAME=oci-lip-ip-<hyphenated-ip>
+LIP_CERTIFICATE_COMPARTMENT_OCID=<lip-compartment-ocid>
+LIP_CERTIFICATE_VERIFY_ENDPOINT=true
+```
+
+Port 80 remains open on the load balancer. The frontend serves
+`/.well-known/acme-challenge/` directly and redirects all other HTTP requests to the same IP over
+HTTPS. Test issuance against staging before requesting the trusted certificate:
+
+```bash
+sudo LIP_APP_DIR=/opt/oci-lip ./deploy/arm64/request-ip-certificate.sh --staging
+sudo LIP_APP_DIR=/opt/oci-lip ./deploy/arm64/request-ip-certificate.sh
+```
+
+Install the persistent renewal timer after trusted issuance:
+
+```bash
+sudo LIP_APP_DIR=/opt/oci-lip ./deploy/arm64/install-certificate-renewal.sh
+sudo systemctl start oci-lip-certificate-renew.service
+sudo systemctl list-timers oci-lip-certificate-renew.timer
+```
+
+The timer checks twice daily with a randomized delay. Certbot only performs issuance when the
+certificate is within its renewal window. Its deployment hook validates the IP SAN and key,
+imports a `PENDING` OCI certificate version, promotes it to `CURRENT`, waits for the load balancer
+to serve the matching SHA-256 fingerprint, and promotes the previous version again if verification
+times out. Renewal status and expiration are exported through `/metrics/health`.
+
+The Identity Domain OAuth application must use the IP origin for its redirect and logout URIs:
+
+```text
+https://<load-balancer-ip>/api/auth/callback
+https://<load-balancer-ip>/
+```
+
+Keep the old origin registered until the IP certificate, application environment, login, logout,
+Grafana, and callback have all been verified.
+
 ## DNS and Certificate Hostname
 
 Use a customer-owned DNS name such as `lip.example.com` for production. A wildcard IP-to-name

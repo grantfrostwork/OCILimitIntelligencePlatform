@@ -1,0 +1,22 @@
+[Unit]
+Description=Renew and publish the OCI LIP public IP certificate
+Wants=network-online.target
+After=network-online.target docker.service oci-lip.service
+Requires=docker.service
+StartLimitIntervalSec=3600
+StartLimitBurst=4
+ConditionPathExists=/opt/oci-lip/docker-compose.yml
+ConditionPathExists=/opt/oci-lip/.env
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/oci-lip
+ExecStart=/usr/bin/bash /opt/oci-lip/deploy/arm64/renew-certificate.sh
+TimeoutStartSec=1800
+Restart=on-failure
+RestartSec=15m
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6

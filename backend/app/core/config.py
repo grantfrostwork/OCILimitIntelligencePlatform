@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     lip_prometheus_otlp_endpoint: str | None = None
     lip_metrics_publish_max_attempts: int = 3
     lip_metrics_publish_timeout_seconds: int = 30
+    lip_certificate_status_path: Path = Path(
+        "/var/lib/oci-lip/certificate/status.json"
+    )
     lip_enable_notifications: bool = False
     lip_notification_topic_name: str = "oci-lip-limit-alerts"
     lip_notification_compartment_ocid: str | None = None

@@ -55,3 +55,30 @@ groups:
         annotations:
           summary: "OCI API throttling observed"
           description: "The latest {{ $labels.region }} scan observed {{ $value | printf \"%.0f\" }} OCI HTTP 429 responses."
+
+      - alert: OciLipTlsCertificateExpiring
+        expr: oci_lip_tls_certificate_days_remaining{environment="production",job="oci-lip-api-health",instance="api:8000"} < 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OCI LIP TLS certificate expires within 48 hours"
+          description: "The public IP certificate has {{ $value | printf \"%.2f\" }} days remaining."
+
+      - alert: OciLipTlsCertificatePublicationFailed
+        expr: (oci_lip_tls_certificate_publish_failures_total{environment="production",job="oci-lip-api-health",instance="api:8000"} > 0) and on() (oci_lip_tls_certificate_publish_success{environment="production",job="oci-lip-api-health",instance="api:8000"} == 0)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OCI LIP TLS certificate publication failed"
+          description: "The certificate renewer has recorded {{ $value | printf \"%.0f\" }} or more publication failures."
+
+      - alert: OciLipTlsCertificateNotServed
+        expr: (oci_lip_tls_certificate_endpoint_verified{environment="production",job="oci-lip-api-health",instance="api:8000"} == 0) and on() (oci_lip_tls_certificate_last_publish_success_timestamp_seconds{environment="production",job="oci-lip-api-health",instance="api:8000"} > 0)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OCI load balancer certificate is not verified"
+          description: "The load balancer has not been verified as serving the certificate most recently published by OCI LIP."

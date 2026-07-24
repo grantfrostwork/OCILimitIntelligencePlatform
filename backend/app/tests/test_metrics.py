@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
@@ -120,13 +121,13 @@ def test_prometheus_metrics_export_limit_and_scan_state():
         if line.startswith("oci_lip_limit_used{") and 'limit_name="dynamic-core-count"' in line
     )
     assert dynamic_used.endswith(" 17.0")
-    assert 'oci_lip_limit_muted{' in output
+    assert "oci_lip_limit_muted{" in output
     assert not any(
         line.startswith(("oci_lip_limit_allowed{", "oci_lip_limit_usage_percent{"))
         and 'limit_name="dynamic-core-count"' in line
         for line in output.splitlines()
     )
-    assert 'oci_lip_limit_collection_status{' in output
+    assert "oci_lip_limit_collection_status{" in output
     assert 'status="ok"' in output
     assert 'oci_lip_alerts_open{severity="warning"} 1.0' in output
     assert "oci_lip_limits_muted_total 0.0" in output
@@ -135,9 +136,40 @@ def test_prometheus_metrics_export_limit_and_scan_state():
     assert 'oci_lip_scan_last_api_retries{region="us-ashburn-1"} 3.0' in output
     assert 'oci_lip_scan_last_api_throttles{region="us-ashburn-1"} 1.0' in output
     assert 'oci_lip_region_enabled{home_region="true",region="us-ashburn-1"' in output
-    assert 'oci_lip_scan_requests{region="us-ashburn-1",status="succeeded",trigger="scheduled"} 1.0' in output
+    assert (
+        'oci_lip_scan_requests{region="us-ashburn-1",status="succeeded",trigger="scheduled"} 1.0'
+        in output
+    )
 
     health_output = render_health_metrics(db).decode()
     assert "oci_lip_exporter_info" in health_output
     assert "oci_lip_scan_schedule_enabled 1.0" in health_output
     assert "oci_lip_scan_schedule_interval_seconds 14400.0" in health_output
+
+
+def test_health_metrics_include_certificate_renewal_status(tmp_path):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine)()
+    status_path = tmp_path / "certificate-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "not_after": (datetime.now(UTC) + timedelta(days=5)).isoformat(),
+                "last_success_timestamp": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+                "last_error": None,
+                "failure_count": 2,
+                "endpoint_verified": True,
+            }
+        )
+    )
+
+    output = render_health_metrics(
+        db,
+        Settings(lip_certificate_status_path=status_path),
+    ).decode()
+
+    assert "oci_lip_tls_certificate_days_remaining" in output
+    assert "oci_lip_tls_certificate_publish_success 1.0" in output
+    assert "oci_lip_tls_certificate_publish_failures_total 2.0" in output
+    assert "oci_lip_tls_certificate_endpoint_verified 1.0" in output
