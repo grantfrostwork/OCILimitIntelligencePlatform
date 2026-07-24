@@ -41,13 +41,12 @@ certbot_args=(
 if [[ "$staging" == "true" ]]; then
   certbot_args+=(--staging)
   docker compose "${compose_files[@]}" run --rm certbot "${certbot_args[@]}"
-  echo "Staging IP certificate validation succeeded; no certificate was published to OCI."
+  echo "Staging IP certificate validation succeeded; no certificate was published."
   exit 0
 fi
 
-certbot_args+=(
-  --deploy-hook
-  "python /opt/oci-lip/certificate_publish.py"
-)
 docker compose "${compose_files[@]}" run --rm certbot "${certbot_args[@]}"
-echo "The trusted IP certificate was issued and published to OCI Certificates."
+docker compose "${compose_files[@]}" run --rm --entrypoint python certbot \
+  /opt/oci-lip/certificate_publish.py \
+  --lineage "/etc/letsencrypt/live/$LIP_CERTIFICATE_IP"
+echo "The trusted IP certificate was issued and published to the OCI Load Balancer."

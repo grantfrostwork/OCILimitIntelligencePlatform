@@ -173,7 +173,8 @@ The backend enforces every route; the frontend only mirrors those permissions in
 Use the [secure access and network migration guide](docs/secure-access-and-network.md) and the
 [secure ARM64 Terraform stack](deploy/terraform/secure-arm64/README.md) for a public HTTPS load
 balancer in front of a private A1 VM. The stack does not create IAM policies or accept TLS private
-keys.
+keys. IP-only deployments use short-lived Let's Encrypt certificates; a persistent systemd timer
+renews them and atomically rotates Load Balancer-managed certificate bundles.
 
 ## Oracle Branding
 

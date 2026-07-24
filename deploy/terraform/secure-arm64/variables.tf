@@ -107,13 +107,24 @@ variable "auth_public_url" {
 }
 
 variable "certificate_id" {
-  description = "OCI Certificates Service certificate OCID. Empty creates an HTTP validation listener only."
+  description = "Bootstrap OCI Certificates Service certificate OCID. Leave empty when using a Load Balancer-managed certificate."
   type        = string
   default     = ""
 
   validation {
     condition     = var.certificate_id == "" || startswith(var.certificate_id, "ocid1.certificate.")
     error_message = "certificate_id must be empty or an OCI Certificates Service certificate OCID."
+  }
+}
+
+variable "load_balancer_certificate_name" {
+  description = "Bootstrap Load Balancer-managed certificate name. Empty with certificate_id creates an HTTP validation listener only."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.load_balancer_certificate_name == "" || can(regex("^[A-Za-z0-9_-]+$", var.load_balancer_certificate_name))
+    error_message = "load_balancer_certificate_name can contain only letters, numbers, underscores, and hyphens."
   }
 }
 
@@ -131,6 +142,7 @@ variable "load_balancer_max_bandwidth_mbps" {
 
 locals {
   compartment_ocid = trimspace(var.compartment_ocid) != "" ? var.compartment_ocid : var.tenancy_ocid
+  https_enabled    = var.certificate_id != "" || var.load_balancer_certificate_name != ""
   common_tags = {
     "Application"  = "OCI-LIP"
     "Architecture" = "ARM64"

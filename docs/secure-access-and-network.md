@@ -114,9 +114,9 @@ CORS_ORIGINS=["https://<load-balancer-ip>"]
 GRAFANA_ROOT_URL=https://<load-balancer-ip>/grafana/
 LETSENCRYPT_EMAIL=<operations-email>
 LIP_CERTIFICATE_IP=<load-balancer-ip>
-LIP_CERTIFICATE_ID=<oci-certificate-ocid>
-LIP_CERTIFICATE_NAME=oci-lip-ip-<hyphenated-ip>
-LIP_CERTIFICATE_COMPARTMENT_OCID=<lip-compartment-ocid>
+LIP_LOAD_BALANCER_ID=<load-balancer-ocid>
+LIP_LOAD_BALANCER_LISTENER_NAME=https
+LIP_LOAD_BALANCER_CERTIFICATE_PREFIX=oci_lip_ip
 LIP_CERTIFICATE_VERIFY_ENDPOINT=true
 ```
 
@@ -138,10 +138,19 @@ sudo systemctl list-timers oci-lip-certificate-renew.timer
 ```
 
 The timer checks twice daily with a randomized delay. Certbot only performs issuance when the
-certificate is within its renewal window. Its deployment hook validates the IP SAN and key,
-imports a `PENDING` OCI certificate version, promotes it to `CURRENT`, waits for the load balancer
-to serve the matching SHA-256 fingerprint, and promotes the previous version again if verification
-times out. Renewal status and expiration are exported through `/metrics/health`.
+certificate is within its renewal window. After every successful renewal check, the publisher
+validates the IP SAN and key, creates a fingerprint-named Load Balancer certificate bundle, updates
+the HTTPS listener, and waits for the public endpoint to serve the matching SHA-256 fingerprint.
+If verification times out, it restores the previous listener configuration and deletes the failed
+bundle. A failed publication makes the systemd service fail and retry; it cannot be reported as a
+successful renewal. Renewal status and expiration are exported through `/metrics/health`.
+
+For a new deployment with no HTTPS listener, the first trusted issuance creates an unattached
+bundle and prints its `certificate_name`. Set that value as
+`load_balancer_certificate_name` in the secure ARM64 Terraform variables, apply the stack to create
+the HTTPS listener, and run `renew-certificate.sh` once to verify the served fingerprint. Terraform
+ignores subsequent certificate-name changes on that listener because the renewal service owns
+rotation.
 
 The Identity Domain OAuth application must use the IP origin for its redirect and logout URIs:
 
@@ -169,10 +178,10 @@ post-logout URL, and any verification contract that pins the application origin.
 1. Apply the secure stack without a certificate.
 2. Verify cloud-init, all container health checks, and load-balancer backend health.
 3. Migrate the PostgreSQL data and uploads from the existing VM.
-4. Create the DNS record and trusted OCI Certificates certificate.
+4. Issue the trusted IP certificate and create the Load Balancer certificate bundle.
 5. Configure the Identity Domain OAuth application, LIP groups, and dedicated sign-on policy.
 6. Enable authentication in the private VM's `.env`.
-7. Apply the certificate OCID to enable HTTPS and the HTTP redirect.
+7. Apply the Load Balancer certificate name to enable HTTPS; NGINX redirects non-ACME HTTP traffic.
 8. Validate Viewer, Operator, and Admin behavior.
 9. Pause the old worker, enable the new worker schedule, and verify a complete regional scan.
 10. Retain the old VM stopped during rollback observation, then remove its public IP and resources.

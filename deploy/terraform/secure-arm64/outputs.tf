@@ -27,5 +27,5 @@ output "bastion_id" {
 }
 
 output "https_enabled" {
-  value = var.certificate_id != ""
+  value = local.https_enabled
 }

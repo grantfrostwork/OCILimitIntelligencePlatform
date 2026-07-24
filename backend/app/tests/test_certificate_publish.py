@@ -11,7 +11,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from app.tools import certificate_publish
 from app.tools.certificate_publish import (
+    _certificate_name,
     load_certificate_material,
     publish_certificate,
 )
@@ -82,35 +84,196 @@ def test_load_certificate_material_rejects_mismatched_private_key(tmp_path):
         load_certificate_material(lineage, "129.159.177.238")
 
 
-def test_publish_skips_oci_update_when_serial_is_current(tmp_path):
+def test_publish_skips_load_balancer_update_when_bundle_is_current(tmp_path):
     lineage = tmp_path / "lineage"
     _write_lineage(lineage, "129.159.177.238")
     material = load_certificate_material(lineage, "129.159.177.238")
-    certificate = SimpleNamespace(
-        current_version=SimpleNamespace(
-            serial_number=str(material.serial_number),
-            version_number=3,
-        )
+    certificate_name = _certificate_name(material, "oci_lip_ip")
+    ssl_configuration = SimpleNamespace(
+        certificate_name=certificate_name,
+        certificate_ids=[],
+        verify_depth=5,
+        verify_peer_certificate=False,
+        has_session_resumption=False,
+        trusted_certificate_authority_ids=[],
+        protocols=["TLSv1.2", "TLSv1.3"],
+        cipher_suite_name="oci-default-ssl-cipher-suite-v1",
+        server_order_preference="ENABLED",
+    )
+    load_balancer = SimpleNamespace(
+        listeners={
+            "https": SimpleNamespace(
+                ssl_configuration=ssl_configuration,
+            )
+        },
+        certificates={certificate_name: SimpleNamespace()},
     )
 
     class Client:
-        def get_certificate(self, certificate_id):
-            assert certificate_id == "ocid1.certificate.example"
-            return SimpleNamespace(data=certificate)
+        def get_load_balancer(self, load_balancer_id):
+            assert load_balancer_id == "ocid1.loadbalancer.example"
+            return SimpleNamespace(data=load_balancer)
 
-        def update_certificate(self, *args, **kwargs):
-            raise AssertionError("an unchanged certificate must not be updated")
+        def create_certificate(self, *args, **kwargs):
+            raise AssertionError("an unchanged certificate must not be created")
+
+        def update_listener(self, *args, **kwargs):
+            raise AssertionError("an unchanged listener must not be updated")
+
+        def delete_certificate(self, *args, **kwargs):
+            raise AssertionError("an unchanged certificate must not be deleted")
 
     result = publish_certificate(
         Client(),
         material,
-        certificate_id="ocid1.certificate.example",
-        compartment_id="ocid1.compartment.example",
-        certificate_name="oci-lip-ip",
+        load_balancer_id="ocid1.loadbalancer.example",
+        listener_name="https",
+        certificate_prefix="oci_lip_ip",
         public_ip="129.159.177.238",
         verify_endpoint=False,
         verify_timeout_seconds=1,
     )
 
     assert result["action"] == "unchanged"
-    assert result["version_number"] == 3
+    assert result["certificate_name"] == certificate_name
+
+
+def _listener(certificate_name: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        default_backend_set_name="oci-lip-backends",
+        port=443,
+        protocol="HTTP",
+        hostname_names=[],
+        path_route_set_name=None,
+        routing_policy_name=None,
+        connection_configuration=SimpleNamespace(idle_timeout=60),
+        rule_set_names=[],
+        ssl_configuration=SimpleNamespace(
+            certificate_name=certificate_name,
+            certificate_ids=[] if certificate_name else ["ocid1.certificate.example"],
+            verify_depth=5,
+            verify_peer_certificate=False,
+            has_session_resumption=False,
+            trusted_certificate_authority_ids=[],
+            protocols=["TLSv1.2", "TLSv1.3"],
+            cipher_suite_name="oci-default-ssl-cipher-suite-v1",
+            server_order_preference="ENABLED",
+        ),
+    )
+
+
+class _LoadBalancerClient:
+    def __init__(
+        self,
+        listener: SimpleNamespace | None,
+        certificates: dict[str, SimpleNamespace] | None = None,
+    ) -> None:
+        self.load_balancer = SimpleNamespace(
+            listeners={"https": listener} if listener else {},
+            certificates=certificates or {},
+        )
+        self.created: list[str] = []
+        self.updated: list[object] = []
+        self.deleted: list[str] = []
+
+    @staticmethod
+    def _response() -> SimpleNamespace:
+        return SimpleNamespace(headers={"opc-work-request-id": "work-request"})
+
+    def get_load_balancer(self, load_balancer_id):
+        assert load_balancer_id == "ocid1.loadbalancer.example"
+        return SimpleNamespace(data=self.load_balancer)
+
+    def get_work_request(self, work_request_id):
+        assert work_request_id == "work-request"
+        return SimpleNamespace(data=SimpleNamespace(lifecycle_state="SUCCEEDED"))
+
+    def create_certificate(self, details, load_balancer_id):
+        assert load_balancer_id == "ocid1.loadbalancer.example"
+        self.created.append(details.certificate_name)
+        return self._response()
+
+    def update_listener(self, details, load_balancer_id, listener_name):
+        assert load_balancer_id == "ocid1.loadbalancer.example"
+        assert listener_name == "https"
+        self.updated.append(details.ssl_configuration)
+        return self._response()
+
+    def delete_certificate(self, load_balancer_id, certificate_name):
+        assert load_balancer_id == "ocid1.loadbalancer.example"
+        self.deleted.append(certificate_name)
+        return self._response()
+
+
+def _publish(client, material):
+    return publish_certificate(
+        client,
+        material,
+        load_balancer_id="ocid1.loadbalancer.example",
+        listener_name="https",
+        certificate_prefix="oci_lip_ip",
+        public_ip="129.159.177.238",
+        verify_endpoint=True,
+        verify_timeout_seconds=1,
+    )
+
+
+def test_publish_creates_unattached_bundle_when_https_listener_is_absent(tmp_path, monkeypatch):
+    lineage = tmp_path / "lineage"
+    _write_lineage(lineage, "129.159.177.238")
+    material = load_certificate_material(lineage, "129.159.177.238")
+    client = _LoadBalancerClient(None)
+    monkeypatch.setattr(certificate_publish, "verify_public_endpoint", lambda *a, **k: True)
+
+    result = _publish(client, material)
+
+    assert result["action"] == "created_unattached"
+    assert client.created == [result["certificate_name"]]
+    assert client.updated == []
+
+
+def test_publish_rotates_listener_and_removes_prior_managed_bundle(tmp_path, monkeypatch):
+    lineage = tmp_path / "lineage"
+    _write_lineage(lineage, "129.159.177.238")
+    material = load_certificate_material(lineage, "129.159.177.238")
+    old_name = "oci_lip_ip_old"
+    client = _LoadBalancerClient(
+        _listener(old_name),
+        {old_name: SimpleNamespace()},
+    )
+    monkeypatch.setattr(certificate_publish, "verify_public_endpoint", lambda *a, **k: True)
+
+    result = _publish(client, material)
+
+    assert result["action"] == "updated"
+    assert client.created == [result["certificate_name"]]
+    assert client.updated[0].certificate_name == result["certificate_name"]
+    assert client.updated[0].certificate_ids is None
+    assert client.deleted == [old_name]
+
+
+def test_publish_restores_listener_and_deletes_new_bundle_on_verification_failure(
+    tmp_path, monkeypatch
+):
+    lineage = tmp_path / "lineage"
+    _write_lineage(lineage, "129.159.177.238")
+    material = load_certificate_material(lineage, "129.159.177.238")
+    client = _LoadBalancerClient(_listener())
+
+    def fail_verification(*args, **kwargs):
+        raise TimeoutError("certificate did not become active")
+
+    monkeypatch.setattr(
+        certificate_publish,
+        "verify_public_endpoint",
+        fail_verification,
+    )
+
+    with pytest.raises(TimeoutError, match="did not become active"):
+        _publish(client, material)
+
+    assert len(client.updated) == 2
+    assert client.updated[0].certificate_name is not None
+    assert client.updated[1].certificate_ids == ["ocid1.certificate.example"]
+    assert client.updated[1].certificate_name is None
+    assert client.deleted == [client.created[0]]

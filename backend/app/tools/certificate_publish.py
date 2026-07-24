@@ -111,183 +111,231 @@ def _client(region: str, auth_mode: str) -> Any:
         config["region"] = region
     else:
         raise ValueError(f"unsupported OCI auth mode: {auth_mode}")
-    return oci.certificates_management.CertificatesManagementClient(config, **kwargs)
+    return oci.load_balancer.LoadBalancerClient(config, **kwargs)
 
 
-def _wait_for_active(client: Any, certificate_id: str, timeout_seconds: int = 300) -> Any:
+def _wait_for_work_request(
+    client: Any,
+    response: Any,
+    *,
+    timeout_seconds: int = 600,
+) -> None:
+    work_request_id = response.headers.get("opc-work-request-id")
+    if not work_request_id:
+        raise RuntimeError("OCI Load Balancer response did not include a work request ID")
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        certificate = client.get_certificate(certificate_id).data
-        if certificate.lifecycle_state == "ACTIVE":
-            return certificate
-        if certificate.lifecycle_state == "FAILED":
-            raise RuntimeError(
-                f"OCI certificate entered FAILED state: {certificate.lifecycle_details}"
-            )
+        work_request = client.get_work_request(work_request_id).data
+        if work_request.lifecycle_state == "SUCCEEDED":
+            return
+        if work_request.lifecycle_state == "FAILED":
+            errors = getattr(work_request, "error_details", None) or []
+            raise RuntimeError(f"OCI Load Balancer work request failed: {errors}")
         time.sleep(5)
-    raise TimeoutError("timed out waiting for the OCI certificate to become ACTIVE")
+    raise TimeoutError("timed out waiting for the OCI Load Balancer work request")
 
 
-def _find_version(client: Any, certificate_id: str, version_name: str) -> int:
-    response = oci.pagination.list_call_get_all_results(
-        client.list_certificate_versions,
-        certificate_id,
+def _certificate_name(material: CertificateMaterial, prefix: str) -> str:
+    clean_prefix = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "_" for character in prefix
+    ).strip("_")
+    if not clean_prefix:
+        raise ValueError("load balancer certificate prefix must contain a valid character")
+    return f"{clean_prefix}_{material.fingerprint_sha256[:24]}"
+
+
+def _ssl_details(current: Any, certificate_name: str | None = None) -> Any:
+    return oci.load_balancer.models.SSLConfigurationDetails(
+        verify_depth=current.verify_depth,
+        verify_peer_certificate=current.verify_peer_certificate,
+        has_session_resumption=current.has_session_resumption,
+        trusted_certificate_authority_ids=list(current.trusted_certificate_authority_ids or []),
+        certificate_ids=(list(current.certificate_ids or []) if certificate_name is None else None),
+        certificate_name=certificate_name or current.certificate_name,
+        protocols=list(current.protocols or []),
+        cipher_suite_name=current.cipher_suite_name,
+        server_order_preference=current.server_order_preference,
     )
-    for version in response.data:
-        if version.version_name == version_name:
-            return int(version.version_number)
-    raise RuntimeError(f"OCI certificate version {version_name} was not found")
 
 
-def _create_certificate(
+def _listener_update_details(listener: Any, ssl_configuration: Any) -> Any:
+    return oci.load_balancer.models.UpdateListenerDetails(
+        default_backend_set_name=listener.default_backend_set_name,
+        port=listener.port,
+        protocol=listener.protocol,
+        hostname_names=list(listener.hostname_names or []),
+        path_route_set_name=listener.path_route_set_name,
+        routing_policy_name=listener.routing_policy_name,
+        ssl_configuration=ssl_configuration,
+        connection_configuration=listener.connection_configuration,
+        rule_set_names=list(listener.rule_set_names or []),
+    )
+
+
+def _create_load_balancer_certificate(
     client: Any,
+    load_balancer_id: str,
+    name: str,
     material: CertificateMaterial,
-    compartment_id: str,
-    name: str,
-) -> str:
-    details = oci.certificates_management.models.CreateCertificateDetails(
-        name=name,
-        description="Let's Encrypt short-lived IP certificate managed by OCI LIP",
-        compartment_id=compartment_id,
-        certificate_config=oci.certificates_management.models.CreateCertificateByImportingConfigDetails(
-            version_name=material.version_name,
-            certificate_pem=material.certificate_pem,
-            cert_chain_pem=material.chain_pem,
-            private_key_pem=material.private_key_pem,
-        ),
-        freeform_tags={
-            "Application": "OCI-LIP",
-            "ManagedBy": "OCI-LIP-Certificate-Renewer",
-        },
+) -> None:
+    details = oci.load_balancer.models.CreateCertificateDetails(
+        certificate_name=name,
+        public_certificate=material.certificate_pem,
+        ca_certificate=material.chain_pem,
+        private_key=material.private_key_pem,
     )
-    response = client.create_certificate(details)
-    certificate_id = response.data.id
-    _wait_for_active(client, certificate_id)
-    return certificate_id
+    _wait_for_work_request(
+        client,
+        client.create_certificate(details, load_balancer_id),
+    )
 
 
-def _find_certificate_by_name(
+def _update_listener_certificate(
     client: Any,
-    compartment_id: str,
-    name: str,
-) -> str | None:
-    response = oci.pagination.list_call_get_all_results(
-        client.list_certificates,
-        compartment_id=compartment_id,
-        name=name,
+    load_balancer_id: str,
+    listener_name: str,
+    listener: Any,
+    ssl_configuration: Any,
+) -> None:
+    _wait_for_work_request(
+        client,
+        client.update_listener(
+            _listener_update_details(listener, ssl_configuration),
+            load_balancer_id,
+            listener_name,
+        ),
     )
-    active = [
-        certificate
-        for certificate in response.data
-        if certificate.name == name
-        and certificate.lifecycle_state not in {"DELETED", "PENDING_DELETION"}
-    ]
-    if len(active) > 1:
-        raise RuntimeError(f"multiple active OCI certificates are named {name}")
-    return active[0].id if active else None
 
 
-def _current_serial(certificate: Any) -> int | None:
-    current = getattr(certificate, "current_version", None)
-    serial = getattr(current, "serial_number", None)
-    return int(serial) if serial is not None else None
+def _delete_load_balancer_certificate(
+    client: Any,
+    load_balancer_id: str,
+    name: str,
+) -> None:
+    _wait_for_work_request(
+        client,
+        client.delete_certificate(load_balancer_id, name),
+    )
+
+
+def _delete_stale_certificates(
+    client: Any,
+    load_balancer_id: str,
+    certificates: dict[str, Any],
+    *,
+    certificate_prefix: str,
+    current_name: str,
+) -> None:
+    managed_prefix = f"{certificate_prefix}_"
+    for name in certificates:
+        if name != current_name and name.startswith(managed_prefix):
+            _delete_load_balancer_certificate(client, load_balancer_id, name)
 
 
 def publish_certificate(
     client: Any,
     material: CertificateMaterial,
     *,
-    certificate_id: str | None,
-    compartment_id: str,
-    certificate_name: str,
+    load_balancer_id: str,
+    listener_name: str,
+    certificate_prefix: str,
     public_ip: str,
     verify_endpoint: bool,
     verify_timeout_seconds: int,
 ) -> dict[str, Any]:
-    if not certificate_id:
-        certificate_id = _find_certificate_by_name(
-            client,
-            compartment_id,
-            certificate_name,
-        )
-    created = not certificate_id
-    previous_version: int | None = None
-    if created:
-        certificate_id = _create_certificate(
-            client,
-            material,
-            compartment_id,
-            certificate_name,
-        )
-        certificate = client.get_certificate(certificate_id).data
-        version_number = int(certificate.current_version.version_number)
-    else:
-        certificate = client.get_certificate(certificate_id).data
-        if _current_serial(certificate) == material.serial_number:
-            return {
-                "action": "unchanged",
-                "certificate_id": certificate_id,
-                "version_number": int(certificate.current_version.version_number),
-                "endpoint_verified": verify_public_endpoint(
-                    public_ip,
-                    material.fingerprint_sha256,
-                    timeout_seconds=verify_timeout_seconds,
-                )
-                if verify_endpoint
-                else False,
-            }
-
-        previous_version = int(certificate.current_version.version_number)
-        update_config = (
-            oci.certificates_management.models.UpdateCertificateByImportingConfigDetails(
-                version_name=material.version_name,
-                stage="PENDING",
-                certificate_pem=material.certificate_pem,
-                cert_chain_pem=material.chain_pem,
-                private_key_pem=material.private_key_pem,
+    load_balancer = client.get_load_balancer(load_balancer_id).data
+    name = _certificate_name(material, certificate_prefix)
+    listener = load_balancer.listeners.get(listener_name)
+    if listener is None:
+        if name not in load_balancer.certificates:
+            _create_load_balancer_certificate(
+                client,
+                load_balancer_id,
+                name,
+                material,
             )
+        return {
+            "action": "created_unattached",
+            "load_balancer_id": load_balancer_id,
+            "certificate_name": name,
+            "endpoint_verified": False,
+        }
+    if listener.ssl_configuration is None:
+        raise ValueError(f"load balancer listener {listener_name} does not use TLS")
+
+    current_name = listener.ssl_configuration.certificate_name
+    if current_name == name:
+        endpoint_verified = (
+            verify_public_endpoint(
+                public_ip,
+                material.fingerprint_sha256,
+                timeout_seconds=verify_timeout_seconds,
+            )
+            if verify_endpoint
+            else False
         )
-        client.update_certificate(
-            certificate_id,
-            oci.certificates_management.models.UpdateCertificateDetails(
-                certificate_config=update_config
-            ),
+        _delete_stale_certificates(
+            client,
+            load_balancer_id,
+            load_balancer.certificates,
+            certificate_prefix=certificate_prefix,
+            current_name=name,
         )
-        _wait_for_active(client, certificate_id)
-        version_number = _find_version(client, certificate_id, material.version_name)
-        client.update_certificate(
-            certificate_id,
-            oci.certificates_management.models.UpdateCertificateDetails(
-                current_version_number=version_number
-            ),
+        return {
+            "action": "unchanged",
+            "load_balancer_id": load_balancer_id,
+            "certificate_name": name,
+            "endpoint_verified": endpoint_verified,
+        }
+
+    if name not in load_balancer.certificates:
+        _create_load_balancer_certificate(
+            client,
+            load_balancer_id,
+            name,
+            material,
         )
-        certificate = _wait_for_active(client, certificate_id)
-        if _current_serial(certificate) != material.serial_number:
-            raise RuntimeError("OCI did not promote the renewed certificate version")
+
+    previous_ssl = _ssl_details(listener.ssl_configuration)
+    _update_listener_certificate(
+        client,
+        load_balancer_id,
+        listener_name,
+        listener,
+        _ssl_details(listener.ssl_configuration, certificate_name=name),
+    )
 
     endpoint_verified = False
-    if verify_endpoint and not created:
-        try:
+    try:
+        if verify_endpoint:
             endpoint_verified = verify_public_endpoint(
                 public_ip,
                 material.fingerprint_sha256,
                 timeout_seconds=verify_timeout_seconds,
             )
-        except Exception:
-            if previous_version is not None:
-                client.update_certificate(
-                    certificate_id,
-                    oci.certificates_management.models.UpdateCertificateDetails(
-                        current_version_number=previous_version
-                    ),
-                )
-                _wait_for_active(client, certificate_id)
-            raise
+    except Exception:
+        _update_listener_certificate(
+            client,
+            load_balancer_id,
+            listener_name,
+            listener,
+            previous_ssl,
+        )
+        _delete_load_balancer_certificate(client, load_balancer_id, name)
+        raise
+
+    _delete_stale_certificates(
+        client,
+        load_balancer_id,
+        load_balancer.certificates,
+        certificate_prefix=certificate_prefix,
+        current_name=name,
+    )
 
     return {
-        "action": "created" if created else "updated",
-        "certificate_id": certificate_id,
-        "version_number": version_number,
+        "action": "updated",
+        "load_balancer_id": load_balancer_id,
+        "certificate_name": name,
         "endpoint_verified": endpoint_verified,
     }
 
@@ -340,7 +388,7 @@ def _lineage_from_args(value: str | None) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Publish a renewed Let's Encrypt IP certificate to OCI Certificates."
+        description="Publish a renewed IP certificate to an OCI Load Balancer listener."
     )
     parser.add_argument("--lineage")
     args = parser.parse_args()
@@ -361,19 +409,17 @@ def main() -> int:
             min_remaining_hours=int(os.getenv("LIP_CERTIFICATE_MIN_REMAINING_HOURS", "96")),
             now=now,
         )
-        certificate_id = os.getenv("LIP_CERTIFICATE_ID") or status.get("certificate_id") or None
         result = publish_certificate(
             _client(
                 os.getenv("OCI_DEFAULT_REGION", "us-ashburn-1"),
                 os.getenv("OCI_AUTH_MODE", "instance_principal"),
             ),
             material,
-            certificate_id=certificate_id,
-            compartment_id=os.getenv("LIP_CERTIFICATE_COMPARTMENT_OCID")
-            or os.environ["OCI_TENANCY_OCID"],
-            certificate_name=os.getenv(
-                "LIP_CERTIFICATE_NAME",
-                f"oci-lip-ip-{public_ip.replace('.', '-')}",
+            load_balancer_id=os.environ["LIP_LOAD_BALANCER_ID"],
+            listener_name=os.getenv("LIP_LOAD_BALANCER_LISTENER_NAME", "https"),
+            certificate_prefix=os.getenv(
+                "LIP_LOAD_BALANCER_CERTIFICATE_PREFIX",
+                "oci_lip_ip",
             ),
             public_ip=public_ip,
             verify_endpoint=os.getenv("LIP_CERTIFICATE_VERIFY_ENDPOINT", "true").lower()

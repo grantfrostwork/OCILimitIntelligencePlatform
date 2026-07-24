@@ -71,40 +71,34 @@ quotas, limit-increase requests, or `all-resources`.
 ## Public IP Certificate Renewal Policy
 
 When automated Let's Encrypt IP certificate renewal is enabled, the renewal container uses the
-VM's instance principal to stage a new imported certificate version, list versions, promote the
-new version to `CURRENT`, and roll back to the previous version if load-balancer verification
-fails.
+VM's instance principal to create a uniquely named Load Balancer certificate bundle, update the
+HTTPS listener, poll the asynchronous work request, verify the public SHA-256 certificate
+fingerprint, and delete superseded LIP-managed bundles. If verification fails, it restores the
+previous listener configuration before deleting the failed bundle.
 
-For steady-state renewal, scope access to the one OCI Certificates resource:
-
-```text
-Allow dynamic-group lip-runtime to use leaf-certificates in compartment OCI-LIP
-  where target.leaf-certificate.id = '<lip-certificate-ocid>'
-Allow dynamic-group lip-runtime to inspect leaf-certificate-versions in compartment OCI-LIP
-  where target.leaf-certificate.id = '<lip-certificate-ocid>'
-```
-
-`use leaf-certificates` supplies `CERTIFICATE_READ` and `CERTIFICATE_UPDATE`.
-`inspect leaf-certificate-versions` supplies `CERTIFICATE_VERSION_INSPECT`, which is required to
-find the staged version by its unique version name before promotion.
-
-The first certificate import additionally requires `CERTIFICATE_CREATE`. If the deployment
-principal does not perform the first import, grant this temporary bootstrap statement:
+Flexible Load Balancer policies cannot be scoped to one load balancer OCID with a target variable.
+Place LIP in a dedicated compartment, and restrict the runtime to only the operations used by the
+renewer:
 
 ```text
-Allow dynamic-group lip-runtime to manage leaf-certificates in compartment OCI-LIP
-  where all {request.permission = 'CERTIFICATE_CREATE',
-             target.leaf-certificate.name = '<lip-certificate-name>'}
+Allow dynamic-group lip-runtime to use load-balancers in compartment OCI-LIP
+  where any {request.operation = 'GetLoadBalancer',
+             request.operation = 'GetWorkRequest',
+             request.operation = 'CreateCertificate',
+             request.operation = 'UpdateListener',
+             request.operation = 'DeleteCertificate'}
 ```
 
-Remove the bootstrap statement after `LIP_CERTIFICATE_ID` is populated. Imported certificates do
-not require a certificate-authority delegate, Vault key, or CA policy. The runtime also does not
-need Load Balancer permissions: the HTTPS listener remains associated with one certificate OCID,
-and the Load Balancer service consumes the version marked `CURRENT`.
+This is the only additional steady-state permission introduced by automatic renewal. The runtime
+does not need `manage load-balancers`, OCI Certificates Service permissions, DNS permissions,
+certificate-authority delegates, Vault key permissions, or permission to read a private-key
+bundle. Certbot keeps the private key in a root-owned Docker volume and sends it only to the Load
+Balancer API when creating the replacement bundle.
 
-Do not grant the runtime permission to read `leaf-certificate-bundles` with
-`CERTIFICATE_CONTENT_WITH_PRIVATE_KEY`. Certbot keeps the private key in its root-owned Docker
-volume, and the renewal container only uploads it during the Certificates API update.
+Because `UpdateListener` can alter listeners on load balancers in the policy scope, do not place
+unrelated customer load balancers in the LIP compartment. If that isolation is impossible, perform
+certificate publication with a separate deployment identity or keep listener rotation as an
+administrator-run operation.
 
 ## Optional Notifications Policy
 
@@ -184,6 +178,7 @@ For customers with strict separation of duties, split deployment into:
 - [OCI Service Limits IAM requirements](https://docs.oracle.com/en-us/iaas/Content/General/service-limits/overview.htm)
 - [OCI IAM operation permissions](https://docs.oracle.com/en-us/iaas/Content/Identity/policyreference/iampolicyreference.htm)
 - [OCI Notifications policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/policyreference/notificationpolicyreference.htm)
-- [OCI Certificates policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/Reference/certificatespolicyreference.htm)
+- [OCI Load Balancer policy reference](https://docs.oracle.com/iaas/Content/Identity/policyreference/lbpolicyreference.htm)
+- [Creating Load Balancer certificate bundles](https://docs.oracle.com/en-us/iaas/Content/Balance/Tasks/create_certificate.htm)
 - [OCI dynamic groups](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/managingdynamicgroups.htm)
 - [OCI Vault policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/Reference/keypolicyreference.htm)

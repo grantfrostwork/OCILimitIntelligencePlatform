@@ -19,5 +19,7 @@ instance_memory_gbs = 12
 repository_branch   = "codex/arm64-a1-deployment"
 auth_public_url     = "https://lip.example.com"
 
-# Add after the HTTP backend is healthy and the trusted certificate exists.
+# Leave both empty for the first HTTP-only apply. Prefer the Load Balancer bundle name for IP TLS.
+# certificate_id exists only to migrate installations that currently use OCI Certificates Service.
 certificate_id = ""
+load_balancer_certificate_name = ""
