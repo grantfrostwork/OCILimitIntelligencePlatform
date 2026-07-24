@@ -137,10 +137,11 @@ sudo systemctl start oci-lip-certificate-renew.service
 sudo systemctl list-timers oci-lip-certificate-renew.timer
 ```
 
-The timer checks twice daily with a randomized delay. Certbot only performs issuance when the
-certificate is within its renewal window. After every successful renewal check, the publisher
-validates the IP SAN and key, creates a fingerprint-named Load Balancer certificate bundle, updates
-the HTTPS listener, and waits for the public endpoint to serve the matching SHA-256 fingerprint.
+The timer checks twice daily with a randomized delay. Certbot targets only the production
+`LIP_CERTIFICATE_IP` lineage and performs issuance only when that certificate is within its renewal
+window. After every successful renewal check, the publisher validates the IP SAN and key, creates a
+fingerprint-named Load Balancer certificate bundle, updates the HTTPS listener, and waits for the
+public endpoint to serve the matching SHA-256 fingerprint.
 If verification times out, it restores the previous listener configuration and deletes the failed
 bundle. A failed publication makes the systemd service fail and retry; it cannot be reported as a
 successful renewal. Renewal status and expiration are exported through `/metrics/health`.

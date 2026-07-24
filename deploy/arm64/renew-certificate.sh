@@ -26,6 +26,7 @@ source .env
 set +a
 
 : "${LIP_CERTIFICATE_IP:?Set LIP_CERTIFICATE_IP in .env}"
+certbot_args+=(--cert-name "$LIP_CERTIFICATE_IP")
 
 exec 9>"$lock_file"
 if ! flock -n 9; then
