@@ -1,5 +1,6 @@
 import type {
   Alert,
+  AuthUser,
   BomDocument,
   Dashboard,
   LimitItem,
@@ -11,11 +12,34 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, init);
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "same-origin",
+    ...init,
+  });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `${response.status} ${response.statusText}`);
+    const body = await response.text();
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { detail?: string };
+      message = parsed.detail ?? body;
+    } catch {
+      // Preserve a non-JSON response from the proxy or API.
+    }
+    throw new ApiError(
+      message || `${response.status} ${response.statusText}`,
+      response.status
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -46,6 +70,14 @@ function queryString(params: object) {
 
 export function getDashboard() {
   return request<Dashboard>("/api/dashboard");
+}
+
+export function getCurrentUser() {
+  return request<AuthUser>("/api/auth/me");
+}
+
+export function signOut() {
+  return request<{ status: string }>("/api/auth/logout", { method: "POST" });
 }
 
 export function getLimits(params: LimitQuery) {

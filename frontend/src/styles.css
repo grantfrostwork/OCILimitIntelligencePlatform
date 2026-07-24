@@ -25,6 +25,68 @@ body {
   background: var(--neutral-30);
 }
 
+.auth-shell {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  width: min(520px, 100%);
+  border: 1px solid var(--aqua-50);
+  border-top: 4px solid var(--oracle-red);
+  border-radius: 8px;
+  background: #ffffff;
+  display: grid;
+  gap: 24px;
+  padding: 36px;
+  box-shadow: 0 20px 50px rgba(30, 50, 36, 0.12);
+}
+
+.auth-brand-lockup {
+  width: 170px;
+  height: auto;
+}
+
+.auth-kicker {
+  color: var(--oracle-red);
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.auth-panel h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.auth-panel p {
+  color: var(--neutral-100);
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+
+.auth-denied {
+  border: 1px solid #f1a29b;
+  border-radius: 6px;
+  background: #fff7f6;
+  color: #8f2f22;
+  padding: 12px;
+}
+
+.auth-login-button {
+  min-height: 46px;
+}
+
+.auth-loading {
+  color: var(--neutral-100);
+}
+
 button,
 input,
 select {
@@ -96,6 +158,38 @@ main {
 
 .topbar-actions {
   align-items: flex-end;
+}
+
+.signed-in-user {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-right: 1px solid var(--aqua-50);
+  padding-right: 12px;
+}
+
+.signed-in-user div {
+  min-width: 0;
+}
+
+.signed-in-user strong,
+.signed-in-user span {
+  display: block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signed-in-user strong {
+  font-size: 12px;
+}
+
+.signed-in-user span {
+  color: var(--neutral-100);
+  font-size: 11px;
+  text-transform: capitalize;
 }
 
 .panel-header {
@@ -611,6 +705,11 @@ tr.row-muted {
   inset: 0;
   opacity: 0;
   cursor: pointer;
+}
+
+.file-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .bom-results {

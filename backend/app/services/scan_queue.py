@@ -58,6 +58,7 @@ def enqueue_scan_requests(
     *,
     trigger: str,
     region_names: list[str] | None = None,
+    actor: str = "system",
 ) -> tuple[str | None, list[ScanRequest], list[str]]:
     region_service = RegionService(db, settings)
     if not region_service.all_regions():
@@ -104,6 +105,7 @@ def enqueue_scan_requests(
 
     db.add(
         AuditLog(
+            actor=actor,
             action="scan.batch_queued",
             target=batch_id,
             detail={

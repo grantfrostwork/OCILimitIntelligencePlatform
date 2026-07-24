@@ -14,6 +14,27 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./lip.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
+    auth_enabled: bool = False
+    auth_public_url: str = "http://localhost:5173"
+    auth_session_secret: str = "local-development-session-secret"
+    auth_session_max_age_seconds: int = 8 * 60 * 60
+    auth_cookie_secure: bool = False
+    auth_oidc_discovery_url: str | None = None
+    auth_oidc_client_id: str | None = None
+    auth_oidc_client_secret: str | None = None
+    auth_oidc_scopes: str = "openid profile email groups"
+    auth_group_claim: str = "groups"
+    auth_viewer_groups: list[str] = Field(
+        default_factory=lambda: ["OCI-LIP-Viewers"]
+    )
+    auth_operator_groups: list[str] = Field(
+        default_factory=lambda: ["OCI-LIP-Operators"]
+    )
+    auth_admin_groups: list[str] = Field(
+        default_factory=lambda: ["OCI-LIP-Admins"]
+    )
+    auth_bootstrap_admin_emails: list[str] = Field(default_factory=list)
+
     oci_auth_mode: Literal["profile", "instance_principal"] = "profile"
     oci_profile: str = "DEFAULT"
     oci_config_file: str = "~/.oci/config"
@@ -54,6 +75,30 @@ class Settings(BaseSettings):
 
     upload_dir: Path = Path("./uploads")
     upload_max_bytes: int = 25 * 1024 * 1024
+
+    def validate_auth_configuration(self) -> None:
+        if not self.auth_enabled:
+            return
+        missing = [
+            name
+            for name, value in (
+                ("AUTH_OIDC_DISCOVERY_URL", self.auth_oidc_discovery_url),
+                ("AUTH_OIDC_CLIENT_ID", self.auth_oidc_client_id),
+                ("AUTH_OIDC_CLIENT_SECRET", self.auth_oidc_client_secret),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                "OIDC authentication is enabled but required settings are missing: "
+                + ", ".join(missing)
+            )
+        if len(self.auth_session_secret) < 32:
+            raise RuntimeError("AUTH_SESSION_SECRET must contain at least 32 characters")
+        if not self.auth_public_url.startswith("https://"):
+            raise RuntimeError("AUTH_PUBLIC_URL must use HTTPS when authentication is enabled")
+        if not self.auth_cookie_secure:
+            raise RuntimeError("AUTH_COOKIE_SECURE must be true when authentication is enabled")
 
 
 @lru_cache

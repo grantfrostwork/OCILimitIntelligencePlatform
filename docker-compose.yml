@@ -32,6 +32,21 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-[]}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-http://localhost}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-local-development-session-secret}
+      AUTH_SESSION_MAX_AGE_SECONDS: ${AUTH_SESSION_MAX_AGE_SECONDS:-28800}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_OIDC_DISCOVERY_URL: ${AUTH_OIDC_DISCOVERY_URL:-}
+      AUTH_OIDC_CLIENT_ID: ${AUTH_OIDC_CLIENT_ID:-}
+      AUTH_OIDC_CLIENT_SECRET: ${AUTH_OIDC_CLIENT_SECRET:-}
+      AUTH_OIDC_SCOPES: ${AUTH_OIDC_SCOPES:-openid profile email groups}
+      AUTH_GROUP_CLAIM: ${AUTH_GROUP_CLAIM:-groups}
+      AUTH_VIEWER_GROUPS: ${AUTH_VIEWER_GROUPS:-["OCI-LIP-Viewers"]}
+      AUTH_OPERATOR_GROUPS: ${AUTH_OPERATOR_GROUPS:-["OCI-LIP-Operators"]}
+      AUTH_ADMIN_GROUPS: ${AUTH_ADMIN_GROUPS:-["OCI-LIP-Admins"]}
+      AUTH_BOOTSTRAP_ADMIN_EMAILS: ${AUTH_BOOTSTRAP_ADMIN_EMAILS:-[]}
       OCI_AUTH_MODE: ${OCI_AUTH_MODE:-instance_principal}
       OCI_TENANCY_OCID: ${OCI_TENANCY_OCID:-ocid1.tenancy.oc1..aaaaaaaa5trur7whdyytam4nmh3tinrx2yfqnbss6yzz4q6i7gmm2leagnkq}
       OCI_DEFAULT_REGION: ${OCI_DEFAULT_REGION:-us-ashburn-1}
@@ -68,9 +83,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    ports:
-      - "8000:8000"
-
   worker:
     build:
       context: ./backend
@@ -151,14 +163,18 @@ services:
     stop_grace_period: 1m
     logging: *default-logging
     environment:
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://129.80.114.109/grafana/}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost/grafana/}
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
       GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_NAME: Main Org.
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-WEBAUTH-USER
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_HEADERS: "Email:X-WEBAUTH-EMAIL Name:X-WEBAUTH-NAME"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"

@@ -1,0 +1,77 @@
+#cloud-config
+package_update: true
+
+packages:
+  - curl
+  - dnf-plugins-core
+  - git
+  - openssl
+
+write_files:
+  - path: /etc/systemd/system/oci-lip.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=OCI Limit Intelligence Platform
+      Wants=network-online.target
+      After=network-online.target docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/oci-lip
+      ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d --build --remove-orphans
+      ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml down
+      TimeoutStartSec=0
+      TimeoutStopSec=600
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - dnf config-manager --enable ol9_addons
+  - dnf install -y docker-engine
+  - systemctl enable --now docker
+  - mkdir -p /usr/local/lib/docker/cli-plugins
+  - curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+  - chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+  - git clone --branch ${repository_branch} --single-branch ${repository_url} /opt/oci-lip
+  - |
+      POSTGRES_PASSWORD=$(openssl rand -hex 24)
+      GRAFANA_PASSWORD=$(openssl rand -hex 24)
+      SESSION_SECRET=$(openssl rand -hex 48)
+      cat > /opt/oci-lip/.env <<EOF
+      APP_NAME="OCI Limit Intelligence Platform"
+      ENVIRONMENT=production
+      POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+      DATABASE_URL=postgresql+psycopg://lip:$POSTGRES_PASSWORD@postgres:5432/lip
+      CORS_ORIGINS=["${auth_public_url}"]
+      AUTH_ENABLED=false
+      AUTH_PUBLIC_URL=${auth_public_url}
+      AUTH_SESSION_SECRET=$SESSION_SECRET
+      AUTH_SESSION_MAX_AGE_SECONDS=28800
+      AUTH_COOKIE_SECURE=false
+      OCI_AUTH_MODE=instance_principal
+      OCI_TENANCY_OCID=${tenancy_ocid}
+      OCI_DEFAULT_REGION=us-ashburn-1
+      OCI_SCAN_ALL_REGIONS=false
+      OCI_MAX_REGION_WORKERS=2
+      OCI_GLOBAL_MAX_CONCURRENT_REQUESTS=12
+      OCI_REGION_STAGGER_SECONDS=15
+      LIP_SCAN_INTERVAL_MINUTES=240
+      LIP_PROMETHEUS_OTLP_ENDPOINT=http://prometheus:9090/api/v1/otlp/v1/metrics
+      LIP_ENABLE_NOTIFICATIONS=false
+      GRAFANA_ROOT_URL=${auth_public_url}/grafana/
+      GRAFANA_ADMIN_USER=admin
+      GRAFANA_ADMIN_PASSWORD=$GRAFANA_PASSWORD
+      UPLOAD_DIR=/var/lib/oci-lip/uploads
+      UPLOAD_MAX_BYTES=26214400
+      EOF
+  - chmod 0600 /opt/oci-lip/.env
+  - systemctl daemon-reload
+  - systemctl enable --now oci-lip.service
+  - firewall-cmd --permanent --add-service=http || true
+  - firewall-cmd --reload || true
+
+final_message: "OCI LIP ARM64 private host bootstrap completed after $UPTIME seconds"

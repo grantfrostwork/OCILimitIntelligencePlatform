@@ -14,6 +14,8 @@ import {
   FileSearch,
   Filter,
   Globe2,
+  LogIn,
+  LogOut,
   Play,
   RefreshCw,
   Save,
@@ -21,6 +23,7 @@ import {
   Server,
   Timer,
   Upload,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -34,9 +37,11 @@ import {
   YAxis,
 } from "recharts";
 import {
+  ApiError,
   discoverRegions,
   exportUrl,
   getAlerts,
+  getCurrentUser,
   getDashboard,
   getLimits,
   getMonitoredRegions,
@@ -46,6 +51,7 @@ import {
   getServices,
   saveRegionAllowlist,
   saveScanSchedule,
+  signOut,
   muteLimit,
   triggerScan,
   triggerRegionScan,
@@ -54,6 +60,7 @@ import {
 } from "./api";
 import type {
   Alert,
+  AuthUser,
   BomDocument,
   Dashboard,
   LimitItem,
@@ -156,7 +163,40 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
+function LoginScreen({ denied }: { denied: boolean }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <img
+          className="auth-brand-lockup"
+          src="/oracle-cloud-infrastructure.png"
+          alt="Oracle Cloud Infrastructure"
+        />
+        <div>
+          <span className="auth-kicker">Secure operations access</span>
+          <h1>OCI Limit Intelligence Platform</h1>
+          <p>
+            Sign in with an OCI IAM Identity Domain account assigned to an authorized
+            LIP group.
+          </p>
+        </div>
+        {denied && (
+          <div className="auth-denied" role="alert">
+            Your account is not assigned to an authorized OCI LIP group.
+          </div>
+        )}
+        <a className="button primary auth-login-button" href="/api/auth/login">
+          <LogIn size={18} />
+          Sign in with OCI IAM
+        </a>
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [totalLimits, setTotalLimits] = useState(0);
@@ -188,6 +228,8 @@ export default function App() {
   const [updatingMuteIds, setUpdatingMuteIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const regionDraftDirty = useRef(false);
+  const canOperate = authUser?.role === "operator" || authUser?.role === "admin";
+  const canAdmin = authUser?.role === "admin";
 
   const queryParams = useMemo(
     () => ({
@@ -217,6 +259,7 @@ export default function App() {
       : scanProgress(latestScan);
 
   async function refresh(showSpinner = true) {
+    if (!authUser) return;
     if (showSpinner) setLoading(true);
     setError("");
     try {
@@ -260,8 +303,19 @@ export default function App() {
   }
 
   useEffect(() => {
-    refresh();
-  }, [queryParams]);
+    getCurrentUser()
+      .then(setAuthUser)
+      .catch((err) => {
+        if (!(err instanceof ApiError) || err.status !== 401) {
+          setError(err instanceof Error ? err.message : "Unable to verify your session.");
+        }
+      })
+      .finally(() => setAuthResolved(true));
+  }, []);
+
+  useEffect(() => {
+    if (authUser) refresh();
+  }, [authUser, queryParams]);
 
   useEffect(() => {
     if (!scanRunning) return;
@@ -405,6 +459,14 @@ export default function App() {
     }
   }
 
+  async function handleSignOut() {
+    try {
+      await signOut();
+    } finally {
+      window.location.assign("/");
+    }
+  }
+
   const chartData =
     dashboard?.top_usage.map((item) => ({
       name: item.limit_name.length > 22 ? `${item.limit_name.slice(0, 22)}...` : item.limit_name,
@@ -414,6 +476,22 @@ export default function App() {
 
   const pageCount = Math.max(1, Math.ceil(totalLimits / PAGE_SIZE));
   const activeFilters = [service, region, level, query, nearLimit ? "near limit" : ""].filter(Boolean);
+
+  if (!authResolved) {
+    return (
+      <main className="auth-shell">
+        <div className="auth-loading">Verifying OCI IAM session...</div>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <LoginScreen
+        denied={new URLSearchParams(window.location.search).get("auth_error") === "not_authorized"}
+      />
+    );
+  }
 
   return (
     <main>
@@ -430,6 +508,13 @@ export default function App() {
           </div>
         </div>
         <div className="topbar-actions">
+          <div className="signed-in-user">
+            <UserRound size={18} />
+            <div>
+              <strong>{authUser.display_name}</strong>
+              <span>{authUser.role}</span>
+            </div>
+          </div>
           <a className="button secondary" href="/grafana/" target="_blank" rel="noreferrer">
             <ExternalLink size={16} />
             Grafana
@@ -446,7 +531,8 @@ export default function App() {
                 scanSchedule?.interval_minutes ?? 240
               )
             }
-            disabled={!scanSchedule || savingSchedule}
+            disabled={!canAdmin || !scanSchedule || savingSchedule}
+            title={canAdmin ? "Toggle automatic scans" : "Administrator role required"}
           >
             <Timer size={16} />
             {scanSchedule?.is_enabled ? "Auto scan on" : "Auto scan off"}
@@ -455,7 +541,7 @@ export default function App() {
             <span>Scan interval</span>
             <select
               value={scanSchedule?.interval_minutes ?? 240}
-              disabled={!scanSchedule || !scanSchedule.is_enabled || savingSchedule}
+              disabled={!canAdmin || !scanSchedule || !scanSchedule.is_enabled || savingSchedule}
               onChange={(event) =>
                 updateScanSchedule(true, Number(event.target.value))
               }
@@ -467,9 +553,22 @@ export default function App() {
               ))}
             </select>
           </label>
-          <button className="button primary" onClick={runScan} disabled={scanRunning}>
+          <button
+            className="button primary"
+            onClick={runScan}
+            disabled={!canOperate || scanRunning}
+            title={canOperate ? "Run a scan" : "Operator role required"}
+          >
             <Play size={16} />
             {scanRunning ? "Scan running" : "Run scan"}
+          </button>
+          <button
+            className="button secondary icon-button"
+            onClick={handleSignOut}
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut size={17} />
           </button>
         </div>
       </header>
@@ -590,6 +689,7 @@ export default function App() {
                 className="button secondary"
                 onClick={selectAllRegions}
                 disabled={
+                  !canAdmin ||
                   monitoredRegions.filter((item) => item.subscription_status === "READY").length ===
                   selectedRegions.length
                 }
@@ -600,12 +700,16 @@ export default function App() {
               <button
                 className="button secondary"
                 onClick={refreshRegionSubscriptions}
-                disabled={discoveringRegions}
+                disabled={!canAdmin || discoveringRegions}
               >
                 <RefreshCw size={16} />
                 {discoveringRegions ? "Discovering" : "Refresh subscriptions"}
               </button>
-              <button className="button primary" onClick={saveRegions} disabled={savingRegions}>
+              <button
+                className="button primary"
+                onClick={saveRegions}
+                disabled={!canAdmin || savingRegions}
+              >
                 <Save size={16} />
                 {savingRegions ? "Saving" : "Save allowlist"}
               </button>
@@ -636,7 +740,7 @@ export default function App() {
                           className="region-checkbox"
                           type="checkbox"
                           checked={selectedRegions.includes(item.region_name)}
-                          disabled={item.subscription_status !== "READY"}
+                          disabled={!canAdmin || item.subscription_status !== "READY"}
                           aria-label={`Monitor ${item.region_name}`}
                           onChange={() => toggleRegion(item.region_name)}
                         />
@@ -695,7 +799,11 @@ export default function App() {
                         <button
                           className="button secondary region-scan-button"
                           onClick={() => runRegionScan(item.region_name)}
-                          disabled={item.subscription_status !== "READY" || requestActive}
+                          disabled={
+                            !canOperate ||
+                            item.subscription_status !== "READY" ||
+                            requestActive
+                          }
                           title={`Run a scan in ${item.region_name}`}
                         >
                           <Play size={15} />
@@ -895,6 +1003,7 @@ export default function App() {
                           title={item.is_muted ? "Re-enable alerts for this limit" : "Mute alerts for this limit"}
                           aria-label={item.is_muted ? "Re-enable alerts for this limit" : "Mute alerts for this limit"}
                           disabled={updatingMuteIds.includes(item.id)}
+                          hidden={!canOperate}
                           onClick={() => updateLimitMute(item.id, !item.is_muted)}
                         >
                           {item.is_muted ? <BellRing size={16} /> : <BellOff size={16} />}
@@ -1064,11 +1173,12 @@ export default function App() {
               <h2>BOM analyzer</h2>
               <p>Upload planned OCI resources and compare them to scanned limits.</p>
             </div>
-            <label className="button primary file-button">
-              <Upload size={16} />
-              {uploading ? "Analyzing" : "Upload"}
-              <input
-                type="file"
+                <label className={`button primary file-button ${!canOperate ? "disabled" : ""}`}>
+                  <Upload size={16} />
+                  {uploading ? "Analyzing" : "Upload"}
+                  <input
+                    type="file"
+                    disabled={!canOperate}
                 accept=".pdf,.docx,.xlsx,.csv,.txt,.json,.tfplan"
                 onChange={(event) => handleUpload(event.target.files?.[0] ?? null)}
               />

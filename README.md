@@ -20,6 +20,8 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Exponential backoff with jitter, regional retries, and OCI throttling telemetry.
 - Event-driven Prometheus snapshots after each completed scan batch plus a lightweight five-minute health scrape.
 - Self-hosted Prometheus and Grafana with a provisioned OCI limit operations dashboard.
+- OCI IAM Identity Domain OIDC login with Viewer, Operator, and Admin roles.
+- Secure ARM64 deployment stack with a public Flexible Load Balancer, private VM, NAT, and OCI Bastion.
 - Docker Compose deployment with PostgreSQL, API, worker, and frontend services.
 
 ## Quick Start
@@ -118,8 +120,9 @@ The bundled worker publishes one complete, timestamped metric snapshot to Promet
 all regions in a scan batch reach a terminal state. Prometheus does not repeatedly scrape unchanged
 capacity data. A separate
 five-minute scrape of `/metrics/health` records exporter availability and scan schedule state only.
-`GET /metrics` remains available for external Prometheus installations and exports persisted state
-without contacting OCI. Useful series include:
+`GET /metrics` remains available to the container-internal Prometheus service and exports persisted
+state without contacting OCI. It is intentionally not published by the frontend proxy. Useful series
+include:
 
 - `oci_lip_limit_allowed`
 - `oci_lip_limit_used`
@@ -143,8 +146,8 @@ to `1`, while the raw usage metrics remain available for audit and analysis.
 ## Grafana Dashboard
 
 The Docker Compose deployment includes an internal Prometheus server and Grafana Enterprise. Grafana
-is exposed through the existing frontend proxy at `http://<vm-ip>/grafana/`; Prometheus is not exposed
-on a host port.
+is exposed through the authenticated frontend proxy at `https://<lip-fqdn>/grafana/`; Prometheus is
+not exposed on a host port.
 
 The provisioned **OCI Limit Intelligence Platform - Operations** dashboard includes:
 
@@ -158,8 +161,19 @@ Capacity series change only when a scan publishes a new snapshot. The provisione
 does not auto-refresh by default; it queries Prometheus when opened or manually refreshed, avoiding
 repeated requests for identical data. Prometheus still checks API health every five minutes and
 retains up to 30 days or 5 GB of samples. Grafana and Prometheus both use persistent Docker volumes.
-Anonymous access is read-only; administrator access requires `GRAFANA_ADMIN_PASSWORD` in the
-deployment `.env` file.
+Grafana anonymous access is disabled. NGINX verifies the signed LIP session and passes the verified
+OCI IAM identity to Grafana's auth-proxy integration.
+
+## Secure Access
+
+Production deployments use OCI IAM Identity Domain OIDC authentication. Membership in
+`OCI-LIP-Viewers`, `OCI-LIP-Operators`, or `OCI-LIP-Admins` determines the highest application role.
+The backend enforces every route; the frontend only mirrors those permissions in its controls.
+
+Use the [secure access and network migration guide](docs/secure-access-and-network.md) and the
+[secure ARM64 Terraform stack](deploy/terraform/secure-arm64/README.md) for a public HTTPS load
+balancer in front of a private A1 VM. The stack does not create IAM policies or accept TLS private
+keys.
 
 ## Oracle Branding
 
@@ -177,3 +191,5 @@ Local development uses `DEFAULT` profile by default.
 - [Deployment](docs/deployment.md)
 - [Ampere A1 / ARM64 deployment](docs/deployment-arm64.md)
 - [IAM policies](docs/iam.md)
+- [Runtime IAM policy reference](docs/runtime-iam-policies.md)
+- [Secure access and network migration](docs/secure-access-and-network.md)

@@ -10,9 +10,18 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, desc, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.auth import AuthUser, require_admin, require_operator, require_viewer
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun, TrendPrediction
+from app.models import (
+    Alert,
+    AuditLog,
+    LimitItem,
+    MonitoredRegion,
+    ScanRequest,
+    ScanRun,
+    TrendPrediction,
+)
 from app.schemas import (
     AlertOut,
     DashboardOut,
@@ -33,7 +42,11 @@ from app.services.regions import RegionService
 from app.services.scan_queue import enqueue_scan_requests
 from app.services.schedule import ALLOWED_SCAN_INTERVALS, get_or_create_schedule, update_schedule
 
-router = APIRouter(prefix="/api", tags=["limits"])
+router = APIRouter(
+    prefix="/api",
+    tags=["limits"],
+    dependencies=[Depends(require_viewer)],
+)
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +112,7 @@ def _enqueue_scan_response(
     db: Session,
     settings: Settings,
     region_names: list[str] | None,
+    actor: str,
 ) -> ScanEnqueueOut:
     try:
         batch_id, requests, skipped = enqueue_scan_requests(
@@ -106,6 +120,7 @@ def _enqueue_scan_response(
             settings,
             trigger="manual",
             region_names=region_names,
+            actor=actor,
         )
     except (OciSdkError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -489,9 +504,10 @@ def list_regions(
 def discover_regions(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_admin),
 ) -> list[RegionOut]:
     try:
-        RegionService(db, settings).sync_subscriptions()
+        RegionService(db, settings).sync_subscriptions(actor=user.email)
     except OciSdkError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     db.commit()
@@ -503,9 +519,10 @@ def update_region_allowlist(
     payload: RegionAllowlistUpdate,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_admin),
 ) -> list[RegionOut]:
     try:
-        RegionService(db, settings).update_allowlist(payload.regions)
+        RegionService(db, settings).update_allowlist(payload.regions, actor=user.email)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
@@ -517,8 +534,9 @@ def trigger_region_scan(
     region: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_operator),
 ) -> ScanEnqueueOut:
-    return _enqueue_scan_response(db, settings, [region])
+    return _enqueue_scan_response(db, settings, [region], user.email)
 
 
 @router.get("/scan-requests", response_model=list[ScanRequestOut])
@@ -540,8 +558,14 @@ def trigger_scan(
     region: str | None = None,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_operator),
 ) -> ScanEnqueueOut:
-    return _enqueue_scan_response(db, settings, [region] if region else None)
+    return _enqueue_scan_response(
+        db,
+        settings,
+        [region] if region else None,
+        user.email,
+    )
 
 
 @router.get("/scan-schedule", response_model=ScanScheduleOut)
@@ -559,6 +583,7 @@ def set_scan_schedule(
     payload: ScanScheduleUpdate,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_admin),
 ) -> ScanScheduleOut:
     try:
         schedule = update_schedule(
@@ -566,6 +591,7 @@ def set_scan_schedule(
             settings,
             is_enabled=payload.is_enabled,
             interval_minutes=payload.interval_minutes,
+            actor=user.email,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -596,11 +622,20 @@ def mute_limit_alerts(
     payload: LimitMuteRequest,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_operator),
 ) -> LimitItemOut:
     limit_item = db.get(LimitItem, limit_item_id)
     if not limit_item:
         raise HTTPException(status_code=404, detail="Limit not found")
     mute_limit(db, limit_item, payload.reason)
+    db.add(
+        AuditLog(
+            actor=user.email,
+            action="limit.muted",
+            target=limit_item.id,
+            detail={"reason": payload.reason},
+        )
+    )
     db.commit()
     logger.info(
         "limit alerts muted",
@@ -619,11 +654,19 @@ def unmute_limit_alerts(
     limit_item_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_operator),
 ) -> LimitItemOut:
     limit_item = db.get(LimitItem, limit_item_id)
     if not limit_item:
         raise HTTPException(status_code=404, detail="Limit not found")
     unmute_limit(db, limit_item, settings)
+    db.add(
+        AuditLog(
+            actor=user.email,
+            action="limit.unmuted",
+            target=limit_item.id,
+        )
+    )
     db.commit()
     logger.info(
         "limit alerts re-enabled",
@@ -638,19 +681,41 @@ def unmute_limit_alerts(
 
 
 @router.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
-def resolve_alert(alert_id: str, db: Session = Depends(get_db)) -> Alert:
+def resolve_alert(
+    alert_id: str,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_operator),
+) -> Alert:
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
     alert.status = "closed"
+    db.add(
+        AuditLog(
+            actor=user.email,
+            action="alert.resolved",
+            target=alert.id,
+        )
+    )
     db.commit()
     db.refresh(alert)
     return alert
 
 
 @router.post("/notifications/ensure")
-def ensure_notifications(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+def ensure_notifications(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    user: AuthUser = Depends(require_admin),
+) -> dict:
     config = AlertService(db, settings).ensure_notification_config()
+    db.add(
+        AuditLog(
+            actor=user.email,
+            action="notifications.ensured",
+            target=config.topic_id or config.topic_name,
+        )
+    )
     db.commit()
     return {
         "topic_name": config.topic_name,

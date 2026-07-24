@@ -40,6 +40,7 @@ def update_schedule(
     *,
     is_enabled: bool,
     interval_minutes: int,
+    actor: str = "system",
 ) -> ScanSchedule:
     if interval_minutes not in ALLOWED_SCAN_INTERVALS:
         allowed = ", ".join(str(value) for value in ALLOWED_SCAN_INTERVALS)
@@ -54,6 +55,7 @@ def update_schedule(
     schedule.updated_at = utcnow()
     db.add(
         AuditLog(
+            actor=actor,
             action="scan.schedule_updated",
             target=DEFAULT_SCHEDULE_ID,
             detail={

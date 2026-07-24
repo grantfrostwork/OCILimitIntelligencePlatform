@@ -1,5 +1,17 @@
 export type Criticality = "normal" | "warning" | "critical" | "error" | "unknown" | "muted";
 
+export type UserRole = "viewer" | "operator" | "admin";
+
+export interface AuthUser {
+  authenticated: boolean;
+  enabled: boolean;
+  subject: string;
+  email: string;
+  display_name: string;
+  role: UserRole;
+  groups: string[];
+}
+
 export interface ScanRun {
   id: string;
   region: string;

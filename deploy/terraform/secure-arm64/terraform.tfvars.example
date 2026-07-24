@@ -1,0 +1,23 @@
+tenancy_ocid       = "ocid1.tenancy.oc1..example"
+compartment_ocid   = "ocid1.compartment.oc1..example"
+region             = "us-ashburn-1"
+oci_profile        = "DEFAULT"
+availability_domain = "example:US-ASHBURN-AD-1"
+
+vcn_id           = "ocid1.vcn.oc1.iad.example"
+public_subnet_id = "ocid1.subnet.oc1.iad.example"
+private_subnet_cidr = "10.96.2.0/24"
+
+allowed_client_cidrs = ["0.0.0.0/0"]
+bastion_client_cidrs = ["203.0.113.10/32"]
+
+image_id           = "ocid1.image.oc1.iad.example"
+ssh_public_key_path = "~/.ssh/ssh-key-2023-11-16.key.pub"
+
+instance_ocpus      = 2
+instance_memory_gbs = 12
+repository_branch   = "codex/arm64-a1-deployment"
+auth_public_url     = "https://lip.example.com"
+
+# Add after the HTTP backend is healthy and the trusted certificate exists.
+certificate_id = ""

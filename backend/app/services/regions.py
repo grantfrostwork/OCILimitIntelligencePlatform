@@ -27,7 +27,7 @@ class RegionService:
         self.settings = settings
         self.sdk = sdk or OciSdk(settings)
 
-    def sync_subscriptions(self) -> list[MonitoredRegion]:
+    def sync_subscriptions(self, *, actor: str = "system") -> list[MonitoredRegion]:
         subscriptions = self.sdk.list_region_subscriptions(
             self.settings.oci_tenancy_ocid,
             region=self.settings.oci_default_region,
@@ -98,6 +98,7 @@ class RegionService:
         if first_discovery:
             self.db.add(
                 AuditLog(
+                    actor=actor,
                     action="regions.discovered",
                     target=self.settings.oci_tenancy_ocid,
                     detail={"ready_regions": [item.region_name for item in ready]},
@@ -105,12 +106,14 @@ class RegionService:
             )
         return self.all_regions()
 
-    def update_allowlist(self, region_names: list[str]) -> list[MonitoredRegion]:
+    def update_allowlist(
+        self, region_names: list[str], *, actor: str = "system"
+    ) -> list[MonitoredRegion]:
         unique_names = list(dict.fromkeys(region_names))
         if not unique_names:
             raise ValueError("At least one READY region must be enabled")
         if not self.all_regions():
-            self.sync_subscriptions()
+            self.sync_subscriptions(actor=actor)
         ready = {item.region_name: item for item in self.ready_regions()}
         invalid = [name for name in unique_names if name not in ready]
         if invalid:
@@ -125,6 +128,7 @@ class RegionService:
 
         self.db.add(
             AuditLog(
+                actor=actor,
                 action="regions.allowlist_updated",
                 target=self.settings.oci_tenancy_ocid,
                 detail={"regions": unique_names},

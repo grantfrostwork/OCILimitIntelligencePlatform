@@ -19,3 +19,14 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 .playwright-mcp/
 backend/outputs/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+*.auto.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
