@@ -1,5 +1,7 @@
 from string import Formatter
 
+from app.services.thresholds import thresholds_for
+
 FIELDS = {
     "service",
     "limit",
@@ -28,6 +30,13 @@ def validate_template(template: str) -> str:
 
 def render_message(config, alert, settings):
     metadata = alert.metadata_json or {}
+    defaults = settings.model_copy(update={
+        "warning_threshold_percent": config.warning_threshold_percent,
+        "critical_threshold_percent": config.critical_threshold_percent,
+    })
+    thresholds = thresholds_for(defaults, alert.service_name)
+    key = "critical_threshold_percent" if alert.severity == "critical" else "warning_threshold_percent"
+    threshold = metadata.get(key, thresholds.critical if alert.severity == "critical" else thresholds.warning)
     values = {
         "service": alert.service_name or "unknown",
         "limit": alert.limit_name or "unknown",
@@ -36,7 +45,7 @@ def render_message(config, alert, settings):
         "percent_used": f"{metadata.get('percent_used', 0):.1f}",
         "used": f"{metadata.get('used', 0):g}",
         "allowed_limit": f"{metadata.get('allowed_limit', 0):g}",
-        "threshold": f"{(config.critical_threshold_percent if alert.severity == 'critical' else config.warning_threshold_percent):g}",
+        "threshold": f"{threshold:g}",
         "message": alert.message,
         "app_url": settings.auth_public_url,
     }

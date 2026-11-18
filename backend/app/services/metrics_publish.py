@@ -184,3 +184,17 @@ def _post_with_retry(endpoint: str, payload: bytes, settings: Settings) -> None:
             if attempt >= attempts:
                 raise
             time.sleep(min(2 ** (attempt - 1), 8))
+
+
+def publish_settings_metrics(settings: Settings) -> None:
+    """Best-effort metrics refresh after a settings edit; never sends email or alters scan history."""
+    if not settings.lip_prometheus_otlp_endpoint:
+        return
+    import logging
+    from app.core.database import SessionLocal
+    try:
+        with SessionLocal() as db:
+            payload = _build_otlp_payload(render_metrics(db, settings).decode(), utcnow(), settings.environment)
+            _post_with_retry(settings.lip_prometheus_otlp_endpoint, payload, settings)
+    except Exception:
+        logging.getLogger(__name__).exception("Could not refresh metrics after threshold edit; next scan will retry")

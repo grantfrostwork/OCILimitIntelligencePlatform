@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.services.thresholds import thresholds_for
 from app.models import LimitItem, LimitSnapshot, TrendPrediction, utcnow
 
 
@@ -45,7 +46,7 @@ class TrendService:
         if denominator == 0:
             return None
         slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True)) / denominator
-        warning_value = allowed * (self.settings.warning_threshold_percent / 100.0)
+        warning_value = allowed * (thresholds_for(self.settings, limit_item.service_name).warning / 100.0)
 
         eta_days = None
         projected_at = None

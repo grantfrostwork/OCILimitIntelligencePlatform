@@ -2,6 +2,8 @@ import type {
   Alert,
   AuthUser,
   NotificationSettings,
+  ServiceThreshold,
+  ServiceThresholdSettings,
   Dashboard,
   LimitItem,
   MonitoredRegion,
@@ -178,4 +180,17 @@ export function syncNotificationSettings() {
 
 export function exportUrl(params: LimitQuery) {
   return `${API_BASE}/api/limits/export${queryString(params)}`;
+}
+
+export function getServiceThresholds() {
+  return request<ServiceThresholdSettings>("/api/service-thresholds");
+}
+export function saveServiceThreshold(row: ServiceThreshold) {
+  return request<ServiceThresholdSettings>(`/api/service-thresholds/${encodeURIComponent(row.service_name)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ warning_threshold_percent: row.warning_threshold_percent, critical_threshold_percent: row.critical_threshold_percent }),
+  });
+}
+export function resetServiceThreshold(service: string) {
+  return request<ServiceThresholdSettings>(`/api/service-thresholds/${encodeURIComponent(service)}`, { method: "DELETE" });
 }

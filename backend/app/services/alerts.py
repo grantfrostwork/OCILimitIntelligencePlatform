@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.models import Alert, AlertEvent, LimitItem, LimitSnapshot, NotificationConfig, utcnow
 from app.services.oci_sdk import OciSdk, OciSdkError
+from app.services.thresholds import thresholds_for
 
 
 def _fingerprint(parts: list[Any]) -> str:
@@ -117,9 +118,10 @@ class AlertService:
         if snapshot.percent_used is None:
             return
 
-        if snapshot.percent_used >= self.settings.critical_threshold_percent:
+        thresholds = thresholds_for(self.settings, limit_item.service_name)
+        if snapshot.percent_used >= thresholds.critical:
             severity = "critical"
-        elif snapshot.percent_used >= self.settings.warning_threshold_percent:
+        elif snapshot.percent_used >= thresholds.warning:
             severity = "warning"
         else:
             return
@@ -139,6 +141,9 @@ class AlertService:
             metadata={
                 "limit_item_id": limit_item.id,
                 "percent_used": snapshot.percent_used,
+                "warning_threshold_percent": thresholds.warning,
+                "critical_threshold_percent": thresholds.critical,
+                "threshold_source": thresholds.source,
                 "used": snapshot.used,
                 "allowed_limit": snapshot.allowed_limit,
                 "scope_type": limit_item.scope_type,

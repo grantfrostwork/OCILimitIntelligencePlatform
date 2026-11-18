@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import auth, health, limits, notifications
+from app.api import auth, health, limits, notifications, service_thresholds
 from app.core.config import get_settings
 from app.core.database import init_db
 
@@ -49,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(limits.router)
     app.include_router(notifications.router)
+    app.include_router(service_thresholds.router)
     return app
 
 

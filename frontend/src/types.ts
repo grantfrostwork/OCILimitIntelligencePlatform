@@ -91,6 +91,9 @@ export interface LimitItem {
   muted_at: string | null;
   mute_reason: string | null;
   criticality: Criticality;
+  warning_threshold_percent: number;
+  critical_threshold_percent: number;
+  threshold_source: "default" | "service";
 }
 
 export interface Dashboard {
@@ -143,4 +146,16 @@ export interface NotificationSettings {
   region: string;
   subscription_status: Record<string, string> | null;
   last_error: string | null;
+}
+
+export interface ServiceThreshold {
+  service_name: string;
+  warning_threshold_percent: number;
+  critical_threshold_percent: number;
+}
+export interface ServiceThresholdSettings {
+  warning_threshold_percent: number;
+  critical_threshold_percent: number;
+  available_services: string[];
+  overrides: ServiceThreshold[];
 }

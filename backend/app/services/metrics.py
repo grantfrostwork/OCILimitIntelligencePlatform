@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.services.thresholds import thresholds_for
 from app.models import Alert, LimitItem, MonitoredRegion, ScanRequest, ScanRun, ScanSchedule
 
 LIMIT_LABELS = ["region", "service", "limit_name", "scope", "availability_domain"]
@@ -104,8 +105,13 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
         registry=registry,
     )
 
+    effective_warning = Gauge("oci_lip_limit_warning_threshold_percent", "Effective warning threshold for this limit.", LIMIT_LABELS, registry=registry)
+    effective_critical = Gauge("oci_lip_limit_critical_threshold_percent", "Effective critical threshold for this limit.", LIMIT_LABELS, registry=registry)
     for item in db.scalars(select(LimitItem)):
         labels = _limit_labels(item)
+        thresholds = thresholds_for(settings, item.service_name)
+        effective_warning.labels(*labels).set(thresholds.warning)
+        effective_critical.labels(*labels).set(thresholds.critical)
         muted.labels(*labels).set(1 if item.is_muted else 0)
         if item.last_allowed_limit is not None:
             allowed.labels(*labels).set(item.last_allowed_limit)

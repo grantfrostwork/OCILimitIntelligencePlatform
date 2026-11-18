@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -259,6 +259,19 @@ class NotificationConfig(Base):
     message_template: Mapped[str] = mapped_column(Text, default="{message}\nPlease review capacity and request a limit increase.\n{app_url}", server_default="{message}\nPlease review capacity and request a limit increase.\n{app_url}")
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ServiceAlertThreshold(Base):
+    __tablename__ = "service_alert_thresholds"
+    __table_args__ = (
+        CheckConstraint("warning_threshold_percent > 0 AND warning_threshold_percent <= 100", name="ck_service_warning_range"),
+        CheckConstraint("critical_threshold_percent >= warning_threshold_percent AND critical_threshold_percent <= 100", name="ck_service_threshold_order"),
+    )
+
+    service_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    warning_threshold_percent: Mapped[float] = mapped_column(Float)
+    critical_threshold_percent: Mapped[float] = mapped_column(Float)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

@@ -977,6 +977,9 @@ export default function App() {
                       </td>
                       <td>
                         <CriticalityBadge value={item.criticality} />
+                        <span className="threshold-source" title="Effective warning and critical thresholds for this limit">
+                          {item.warning_threshold_percent}% / {item.critical_threshold_percent}% · {item.threshold_source === "service" ? "Service override" : "Default"}
+                        </span>
                       </td>
                       <td>{fmtDate(item.last_collected_at)}</td>
                       <td className="actions-column">

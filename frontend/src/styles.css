@@ -1114,3 +1114,15 @@ tr.row-muted {
 .settings-footer span { font-size: 12px; color: #60716c; }
 .lower-grid.trends-only { grid-template-columns: 1fr; }
 @media (max-width: 900px) { .settings-columns { grid-template-columns: 1fr; } .settings-footer { align-items: flex-start; flex-direction: column; } }
+
+.service-threshold-settings { border-top: 1px solid #dbe4df; margin-top: 24px; padding-top: 22px; }
+.threshold-defaults { color: #40594d; font-size: 14px; }
+.threshold-source { display: block; font-size: 11px; color: #586d63; margin-top: 5px; white-space: nowrap; }
+.threshold-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.threshold-table input { max-width: 125px; margin: 0; }
+.threshold-add { margin-top: 18px; }
+.threshold-add-fields { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) auto; align-items: end; gap: 12px; }
+.threshold-add-fields label { margin-bottom: 0; }
+.threshold-add-fields select { min-height: 43px; width: 100%; border: 1px solid #c4d1cc; border-radius: 6px; padding: 10px; background: #fff; color: #20352c; }
+.threshold-add-fields button { min-height: 43px; }
+@media (max-width: 760px) { .threshold-add-fields { grid-template-columns: 1fr 1fr; } .threshold-add-fields label:first-child { grid-column: 1 / -1; } }

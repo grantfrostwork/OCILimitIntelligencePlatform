@@ -4,6 +4,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.services.thresholds import thresholds_for
 from app.models import Alert, LimitItem, utcnow
 
 
@@ -21,12 +22,14 @@ def unmute_limit(db: Session, limit_item: LimitItem, settings: Settings) -> None
     limit_item.mute_reason = None
 
     threshold_alert_restored = False
+    thresholds = thresholds_for(settings, limit_item.service_name)
+    severity = "critical" if limit_item.last_percent_used is not None and limit_item.last_percent_used >= thresholds.critical else "warning"
     is_near_limit = (
         limit_item.last_percent_used is not None
-        and limit_item.last_percent_used >= settings.warning_threshold_percent
+        and limit_item.last_percent_used >= thresholds.warning
     )
     for alert in _alerts_for_limit(db, limit_item):
-        if alert.alert_type == "threshold_exceeded" and is_near_limit and not threshold_alert_restored:
+        if alert.alert_type == "threshold_exceeded" and alert.severity == severity and is_near_limit and not threshold_alert_restored:
             alert.status = "open"
             threshold_alert_restored = True
         else:

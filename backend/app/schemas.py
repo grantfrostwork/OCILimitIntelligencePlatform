@@ -111,6 +111,9 @@ class LimitItemOut(BaseModel):
     muted_at: datetime | None
     mute_reason: str | None
     criticality: str
+    warning_threshold_percent: float
+    critical_threshold_percent: float
+    threshold_source: str
 
 
 class LimitMuteRequest(BaseModel):

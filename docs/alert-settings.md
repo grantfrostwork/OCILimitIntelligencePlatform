@@ -14,3 +14,15 @@ The API supports admin-only GET/PUT `/api/notifications` and POST `/api/notifica
 Bootstrap a dedicated OCI Notifications topic in the deployment compartment with a unique name. Set `LIP_NOTIFICATION_TOPIC_NAME` and `LIP_NOTIFICATION_COMPARTMENT_OCID` for both API and worker. Set `AUTH_PUBLIC_URL` for both services so worker-generated emails contain the public dashboard URL. The runtime needs `use ons-topics` and `inspect ons-subscriptions` in that dedicated compartment. Topic creation remains a deployment administrator operation.
 
 The BOM analyzer UI, upload endpoints, parsing service, and model/schema mappings have been removed. Historical database tables and deployment backups are retained for rollback and are inaccessible through the application.
+
+## Service-specific thresholds
+
+Under **Email alert settings → Service overrides**, choose a scanned OCI service and enter its warning and critical percentages. Click **Add override**. An override applies to every limit in that service, across all monitored regions. Services without an override inherit the default thresholds shown above the table.
+
+Edit an existing row and click **Save**, or click **Reset to default** to remove that service's override. Changing the global defaults does not change explicit service overrides. Thresholds must be above 0 and at most 100, with critical at least warning. At exactly the configured percentage, the corresponding warning/critical level applies.
+
+The limit matrix shows each row's effective warning/critical pair and whether it comes from a service override or the defaults. Dashboard counts, filters, CSV classification, forecasts and email `{threshold}` values use the same policy. Prometheus/Grafana receive a best-effort metric refresh after settings changes and on subsequent completed scans.
+
+Saving thresholds does not itself send an email. The next scan evaluates delivery using the new settings. Existing mute settings and the six-hour per-limit/per-severity deduplication window still apply. Raising a threshold closes an open threshold alert that no longer matches the latest recorded utilization/severity; historical delivery events are retained. Forecasts are recalculated using stored history.
+
+Administrators can view and modify overrides. The API is `GET /api/service-thresholds`, `PUT /api/service-thresholds/{service_name}` with `warning_threshold_percent` and `critical_threshold_percent`, and `DELETE /api/service-thresholds/{service_name}` to inherit defaults again. Changes are recorded in the audit log. Overrides are stored in the additive `service_alert_thresholds` table; no environment-file edits or restarts are required to tune them.

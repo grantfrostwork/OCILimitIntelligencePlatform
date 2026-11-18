@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     warning_threshold_percent: float = 90.0
     critical_threshold_percent: float = 98.0
+    service_alert_thresholds: dict[str, dict[str, float]] = Field(default_factory=dict)
     trend_alert_window_days: int = 14
     trend_min_points: int = 4
 

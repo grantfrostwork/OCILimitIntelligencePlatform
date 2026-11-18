@@ -1,7 +1,7 @@
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -117,11 +117,14 @@ def get_notifications(
 @router.put("", response_model=NotificationOut)
 def save_notifications(
     payload: NotificationUpdate,
+    background: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     user: Annotated[AuthUser, Depends(require_admin)],
 ):
     config = config_for(db, settings)
+    thresholds_changed = (config.warning_threshold_percent != payload.warning_threshold_percent or
+                          config.critical_threshold_percent != payload.critical_threshold_percent)
     for key, value in payload.model_dump().items():
         setattr(config, key, value)
     config.updated_at = utcnow()
@@ -133,6 +136,13 @@ def save_notifications(
             detail=payload.model_dump(),
         )
     )
+    if thresholds_changed:
+        from app.services.notification_settings import effective_settings
+        from app.services.threshold_updates import refresh_threshold_dependents
+        db.flush()
+        refresh_threshold_dependents(db, effective_settings(db, settings))
+        from app.services.metrics_publish import publish_settings_metrics
+        background.add_task(publish_settings_metrics, settings)
     db.commit()
     return reconcile(db, settings, config)
 

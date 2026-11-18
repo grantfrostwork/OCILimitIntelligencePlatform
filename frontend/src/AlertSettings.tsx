@@ -1,12 +1,15 @@
+import { ServiceThresholdSettings } from "./ServiceThresholdSettings";
 import { useEffect, useState } from "react";
 import { Bell, Plus, RefreshCw, Save, X } from "lucide-react";
 import { getNotificationSettings, saveNotificationSettings, syncNotificationSettings } from "./api";
-import type { NotificationSettings } from "./types";
+import type { NotificationSettings, ServiceThreshold } from "./types";
 
 const placeholders = ["service", "limit", "region", "percent_used", "used", "allowed_limit", "severity", "threshold", "message", "app_url"];
 
 export function AlertSettings({ onSaved }: { onSaved: () => void }) {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
+  const [serviceOverrides, setServiceOverrides] = useState<ServiceThreshold[]>([]);
+  const [thresholdRevision, setThresholdRevision] = useState(0);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -38,7 +41,7 @@ export function AlertSettings({ onSaved }: { onSaved: () => void }) {
     setBusy(true); setError(""); setNotice("");
     try {
       const result = sync ? await syncNotificationSettings() : await saveNotificationSettings(settings);
-      setSettings(result); setDirty(false);
+      setSettings(result); setDirty(false); setThresholdRevision((value) => value + 1);
       if (result.last_error) setError(`Settings saved, but delivery setup needs attention: ${result.last_error}`);
       else setNotice(sync ? "Subscription status refreshed." : "Alert settings saved. New recipients must confirm their subscription by email.");
       onSaved();
@@ -46,10 +49,13 @@ export function AlertSettings({ onSaved }: { onSaved: () => void }) {
     finally { setBusy(false); }
   }
 
+  const exampleOverride = serviceOverrides.find((row) => row.service_name === "compute");
+  const exampleWarning = exampleOverride?.warning_threshold_percent ?? settings?.warning_threshold_percent ?? 90;
+  const exampleCritical = exampleOverride?.critical_threshold_percent ?? settings?.critical_threshold_percent ?? 98;
   const values: Record<string, string> = {
     service: "compute", limit: "standard-a1-core-count", region: "us-ashburn-1",
-    percent_used: "95.0", used: "19", allowed_limit: "20", severity: 95 >= (settings?.critical_threshold_percent ?? 98) ? "CRITICAL" : "WARNING",
-    threshold: String(95 >= (settings?.critical_threshold_percent ?? 98) ? settings?.critical_threshold_percent : settings?.warning_threshold_percent ?? 90),
+    percent_used: "95.0", used: "19", allowed_limit: "20", severity: 95 >= exampleCritical ? "CRITICAL" : "WARNING",
+    threshold: String(95 >= exampleCritical ? exampleCritical : exampleWarning),
     message: "standard-a1-core-count in us-ashburn-1 is 95.0% used (19 of 20).",
     app_url: window.location.origin,
   };
@@ -77,9 +83,9 @@ export function AlertSettings({ onSaved }: { onSaved: () => void }) {
         <div className="settings-columns">
           <div>
             <div className="threshold-fields">
-              <label>Warning threshold (%)<input aria-label="Warning threshold (%)" type="number" min="0.1" max="100" step="0.1" required
+              <label>Default warning threshold (%)<input aria-label="Warning threshold (%)" type="number" min="0.1" max="100" step="0.1" required
                 value={settings.warning_threshold_percent} onChange={(event) => update({ warning_threshold_percent: Number(event.target.value) })} /></label>
-              <label>Critical threshold (%)<input aria-label="Critical threshold (%)" type="number" min={settings.warning_threshold_percent} max="100" step="0.1" required
+              <label>Default critical threshold (%)<input aria-label="Critical threshold (%)" type="number" min={settings.warning_threshold_percent} max="100" step="0.1" required
                 value={settings.critical_threshold_percent} onChange={(event) => update({ critical_threshold_percent: Number(event.target.value) })} /></label>
             </div>
             <h3>Email recipients</h3>
@@ -110,5 +116,6 @@ export function AlertSettings({ onSaved }: { onSaved: () => void }) {
           <span>Threshold changes apply to the dashboard immediately and to alert emails from the next scan.</span></div>
       </fieldset>
     </form>}
+    <ServiceThresholdSettings revision={thresholdRevision} onSaved={onSaved} onOverridesChanged={setServiceOverrides} />
   </section>;
 }

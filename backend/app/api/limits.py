@@ -36,6 +36,7 @@ from app.schemas import (
     ScanScheduleUpdate,
 )
 from app.services.notification_settings import get_runtime_settings
+from app.services.thresholds import thresholds_for, threshold_columns
 from app.services.muting import mute_limit, unmute_limit
 from app.services.oci_sdk import OciSdkError
 from app.services.regions import RegionService
@@ -143,14 +144,16 @@ def criticality(item: LimitItem, settings: Settings) -> str:
         return "error"
     if item.last_percent_used is None:
         return "unknown"
-    if item.last_percent_used >= settings.critical_threshold_percent:
+    thresholds = thresholds_for(settings, item.service_name)
+    if item.last_percent_used >= thresholds.critical:
         return "critical"
-    if item.last_percent_used >= settings.warning_threshold_percent:
+    if item.last_percent_used >= thresholds.warning:
         return "warning"
     return "normal"
 
 
 def limit_to_out(item: LimitItem, settings: Settings) -> LimitItemOut:
+    thresholds = thresholds_for(settings, item.service_name)
     return LimitItemOut(
         id=item.id,
         region=item.region,
@@ -170,6 +173,9 @@ def limit_to_out(item: LimitItem, settings: Settings) -> LimitItemOut:
         muted_at=item.muted_at,
         mute_reason=item.mute_reason,
         criticality=criticality(item, settings),
+        warning_threshold_percent=thresholds.warning,
+        critical_threshold_percent=thresholds.critical,
+        threshold_source=thresholds.source,
     )
 
 
@@ -184,6 +190,7 @@ def _limits_query(
     near_limit: bool,
     mute_state: Literal["all", "active", "muted"],
 ):
+    warning_threshold, critical_threshold = threshold_columns(settings)
     query = select(LimitItem)
     if mute_state == "active":
         query = query.where(LimitItem.is_muted.is_(False))
@@ -207,23 +214,23 @@ def _limits_query(
     if near_limit:
         query = query.where(
             LimitItem.is_muted.is_(False),
-            LimitItem.last_percent_used >= settings.warning_threshold_percent,
+            LimitItem.last_percent_used >= warning_threshold,
         )
     if level == "critical":
         query = query.where(
             LimitItem.is_muted.is_(False),
-            LimitItem.last_percent_used >= settings.critical_threshold_percent,
+            LimitItem.last_percent_used >= critical_threshold,
         )
     elif level == "warning":
         query = query.where(
             LimitItem.is_muted.is_(False),
-            LimitItem.last_percent_used >= settings.warning_threshold_percent,
-            LimitItem.last_percent_used < settings.critical_threshold_percent,
+            LimitItem.last_percent_used >= warning_threshold,
+            LimitItem.last_percent_used < critical_threshold,
         )
     elif level == "normal":
         query = query.where(
             LimitItem.is_muted.is_(False),
-            LimitItem.last_percent_used < settings.warning_threshold_percent,
+            LimitItem.last_percent_used < warning_threshold,
         )
     elif level == "error":
         query = query.where(
@@ -356,6 +363,7 @@ def list_services(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/dashboard", response_model=DashboardOut)
 def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_runtime_settings)) -> DashboardOut:
+    warning_threshold, critical_threshold = threshold_columns(settings)
     total = db.scalar(select(func.count(LimitItem.id))) or 0
     muted = (
         db.scalar(select(func.count(LimitItem.id)).where(LimitItem.is_muted.is_(True))) or 0
@@ -385,7 +393,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_ru
         db.scalar(
             select(func.count(LimitItem.id)).where(
                 LimitItem.is_muted.is_(False),
-                LimitItem.last_percent_used >= settings.warning_threshold_percent,
+                LimitItem.last_percent_used >= warning_threshold,
                 LimitItem.last_percent_used < 100,
             )
         )
@@ -397,8 +405,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_ru
     elif near_capacity:
         overall_status = "yellow"
         status_reason = (
-            f"{near_capacity} limit(s) are at or above the "
-            f"{settings.warning_threshold_percent:g}% warning threshold."
+            f"{near_capacity} limit(s) are at or above their effective warning threshold."
         )
     else:
         overall_status = "green"
@@ -408,8 +415,8 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_ru
         db.scalar(
             select(func.count(LimitItem.id)).where(
                 LimitItem.is_muted.is_(False),
-                LimitItem.last_percent_used >= settings.warning_threshold_percent,
-                LimitItem.last_percent_used < settings.critical_threshold_percent,
+                LimitItem.last_percent_used >= warning_threshold,
+                LimitItem.last_percent_used < critical_threshold,
             )
         )
         or 0
@@ -418,7 +425,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_ru
         db.scalar(
             select(func.count(LimitItem.id)).where(
                 LimitItem.is_muted.is_(False),
-                LimitItem.last_percent_used >= settings.critical_threshold_percent
+                LimitItem.last_percent_used >= critical_threshold
             )
         )
         or 0
@@ -443,7 +450,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_ru
             select(LimitItem.service_name, func.count(LimitItem.id))
             .where(
                 LimitItem.is_muted.is_(False),
-                LimitItem.last_percent_used >= settings.warning_threshold_percent,
+                LimitItem.last_percent_used >= warning_threshold,
             )
             .group_by(LimitItem.service_name)
             .order_by(desc(func.count(LimitItem.id)))
