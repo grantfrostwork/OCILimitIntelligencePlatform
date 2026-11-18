@@ -1,5 +1,7 @@
 # OCI Ampere A1 Deployment
 
+> For new customer installations, use the [Resource Manager installation guide](../deploy/terraform/resource-manager/README.md). This document describes the older manual deployment or historical runtime setup.
+
 OCI LIP runs natively on `linux/arm64` without emulating x86. The ARM Compose override pins every
 runtime service to ARM64 so a deployment fails during image resolution instead of silently using
 emulation.

@@ -1,5 +1,7 @@
 # OCI LIP Runtime IAM Policies
 
+> For new customer installations, use the [Resource Manager installation guide](../deploy/terraform/resource-manager/README.md). This document describes the older manual deployment or historical runtime setup.
+
 This document records the OCI permissions required by the OCI Limit Intelligence Platform
 runtime. It deliberately separates the VM's instance-principal permissions from the permissions
 needed by a person or Resource Manager stack that deploys the infrastructure.

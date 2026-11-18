@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars locally. Do not commit real tfvars/state.
+tenancy_ocid = "ocid1.tenancy.oc1..REPLACE"
+parent_compartment_ocid = "ocid1.compartment.oc1..REPLACE"
+home_region = "us-ashburn-1"
+region = "us-ashburn-1"
+deployment_name = "oci-lip"
+availability_domain = "TENANCY:US-ASHBURN-AD-1"
+image_ocid = "ocid1.image.oc1.iad.REPLACE"
+ssh_public_key = "ssh-ed25519 AAAA_REPLACE customer-admin"
+bastion_client_cidrs = ["203.0.113.10/32"]
+allowed_client_cidrs = ["203.0.113.0/24"]
+public_url = "https://limits.example.com"
+certificate_ocid = "ocid1.certificate.oc1.iad.REPLACE"
+oidc_secret_ocid = "ocid1.vaultsecret.oc1.iad.REPLACE"
+secret_region = "us-ashburn-1"

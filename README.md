@@ -23,6 +23,14 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Secure ARM64 deployment stack with a public Flexible Load Balancer, private VM, NAT, and OCI Bastion.
 - Docker Compose deployment with PostgreSQL, API, worker, and frontend services.
 
+## Deploy in your OCI tenancy
+
+Use the [customer installation guide](deploy/terraform/resource-manager/README.md) for the OCI Resource Manager stack, prerequisites, SSO, email setup, acceptance checks, upgrades and teardown.
+
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https%3A%2F%2Fgithub.com%2Fgrantfrostwork%2FOCILimitIntelligencePlatform%2Freleases%2Fdownload%2Fcustomer-stack-v1.0.0%2Foci-lip-resource-manager.zip)
+
+The stack creates a dedicated compartment and private ARM64 deployment. Prepare a customer hostname/TLS certificate and OCI IAM confidential application credentials in Vault first. Infrastructure Apply is followed by real SSO and email acceptance checks. Local development below uses different authentication defaults.
+
 ## Quick Start
 
 Backend:

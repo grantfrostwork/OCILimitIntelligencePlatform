@@ -1,0 +1,149 @@
+title: OCI Limit Intelligence Platform
+description: Private ARM64 monitoring with OCI IAM SSO and configurable email alerts.
+  Complete certificate and Vault prerequisites in README before Apply.
+schemaVersion: 1.1.0
+version: 1.0.0
+locale: en
+variableGroups:
+- title: Deployment
+  variables:
+  - tenancy_ocid
+  - parent_compartment_ocid
+  - deployment_name
+  - region
+  - home_region
+  - availability_domain
+  - image_ocid
+  - ssh_public_key
+- title: Network and HTTPS
+  variables:
+  - vcn_cidr
+  - allowed_client_cidrs
+  - bastion_client_cidrs
+  - public_url
+  - certificate_ocid
+- title: Authentication
+  variables:
+  - oidc_secret_ocid
+  - secret_region
+- title: Scanning and initial alerts
+  variables:
+  - scan_all_regions
+  - warning_threshold_percent
+  - critical_threshold_percent
+  - application_commit
+variables:
+  tenancy_ocid:
+    type: string
+    title: Tenancy ocid
+    description: Customer tenancy OCID.
+    required: true
+  parent_compartment_ocid:
+    type: oci:identity:compartment:id
+    title: Parent compartment ocid
+    description: Parent in which to create the dedicated application compartment.
+    required: true
+  region:
+    type: string
+    title: Region
+    description: Deployment region.
+    required: true
+    default: us-ashburn-1
+  home_region:
+    type: oci:identity:region:name
+    title: Home region
+    description: Tenancy home region; IAM resources are created here.
+    required: true
+  deployment_name:
+    type: string
+    title: Deployment name
+    description: Unique name for this installation and tenancy-wide IAM resources.
+    required: true
+    default: oci-lip
+  availability_domain:
+    type: oci:identity:availabilitydomain:name
+    title: Availability domain
+    description: Availability domain containing A1 capacity.
+    required: true
+    dependsOn:
+      compartmentId: ${tenancy_ocid}
+  image_ocid:
+    type: string
+    title: Image ocid
+    description: Oracle Linux 9 ARM64 platform image for this region; pin to avoid
+      replacement on image refresh.
+    required: true
+  ssh_public_key:
+    type: string
+    title: Ssh public key
+    description: SSH public key contents. Never supply a private key.
+    required: true
+  bastion_client_cidrs:
+    type: array
+    title: Bastion client cidrs
+    description: Administrator public source CIDRs, ideally /32.
+    required: true
+    items:
+      type: string
+  allowed_client_cidrs:
+    type: array
+    title: Allowed client cidrs
+    description: HTTPS client source CIDRs. Use corporate egress ranges or deliberately
+      choose 0.0.0.0/0.
+    required: true
+    items:
+      type: string
+  vcn_cidr:
+    type: string
+    title: Vcn cidr
+    description: New VCN CIDR; public and private subnets use cidrsubnet /24.
+    required: true
+    default: 10.96.0.0/16
+  public_url:
+    type: string
+    title: Public url
+    description: HTTPS origin, e.g. https://limits.example.com; no trailing slash.
+    required: true
+  certificate_ocid:
+    type: string
+    title: Certificate ocid
+    description: Existing OCI Certificates service certificate in deployment region
+      matching public_url.
+    required: true
+  oidc_secret_ocid:
+    type: string
+    title: Oidc secret ocid
+    description: Existing Vault secret OCID containing the JSON described in README.
+      No secret value enters Terraform.
+    required: true
+  secret_region:
+    type: oci:identity:region:name
+    title: Secret region
+    description: Region holding the existing Vault secret.
+    required: true
+  application_commit:
+    type: string
+    title: Application commit
+    description: Immutable application Git commit. Updates require the documented
+      guest upgrade procedure.
+    required: true
+    default: 21f916000953aaeddc30600d4a0311c5ee72f1d4
+  scan_all_regions:
+    type: boolean
+    title: Scan all regions
+    description: Scan all subscribed tenancy regions instead of deployment region
+      only.
+    required: true
+    default: false
+  warning_threshold_percent:
+    type: number
+    title: Warning threshold percent
+    description: Initial warning threshold; later managed in application Settings.
+    required: true
+    default: 90
+  critical_threshold_percent:
+    type: number
+    title: Critical threshold percent
+    description: Initial critical threshold; later managed in application Settings.
+    required: true
+    default: 98

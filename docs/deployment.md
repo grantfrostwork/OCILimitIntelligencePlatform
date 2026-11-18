@@ -1,5 +1,7 @@
 # OCI VM Deployment
 
+> For new customer installations, use the [Resource Manager installation guide](../deploy/terraform/resource-manager/README.md). This document describes the older manual deployment or historical runtime setup.
+
 ## Prerequisites
 
 - OCI Linux VM in the target tenancy.

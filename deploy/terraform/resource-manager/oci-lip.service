@@ -1,0 +1,25 @@
+[Unit]
+Description=OCI Limit Intelligence Platform
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+ConditionPathExists=/opt/oci-lip/.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=30
+WorkingDirectory=/opt/oci-lip
+ExecStartPre=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml config --quiet
+ExecStartPre=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml build
+ExecStartPre=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d postgres
+ExecStartPre=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml run --rm api alembic upgrade head
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d --remove-orphans
+ExecStartPost=/usr/local/sbin/oci-lip-ready
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.arm64.yml stop --timeout 300
+TimeoutStartSec=3600
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target

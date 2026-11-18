@@ -1,0 +1,33 @@
+name: Customer Resource Manager stack
+on:
+  push:
+    paths: ['deploy/terraform/resource-manager/**', 'scripts/package-resource-manager.py', 'scripts/validate-resource-manager.py', '.github/workflows/customer-stack.yml']
+  pull_request:
+    paths: ['deploy/terraform/resource-manager/**', 'scripts/package-resource-manager.py', 'scripts/validate-resource-manager.py', '.github/workflows/customer-stack.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          terraform_wrapper: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: terraform fmt -check deploy/terraform/resource-manager
+      - run: terraform -chdir=deploy/terraform/resource-manager init -backend=false -input=false -lockfile=readonly
+      - run: terraform -chdir=deploy/terraform/resource-manager validate
+      - run: python -m unittest discover -s deploy/terraform/resource-manager/tests -v
+      - run: bash -n deploy/terraform/resource-manager/install.sh deploy/terraform/resource-manager/ready.sh
+      - run: pip install PyYAML jsonschema python-hcl2
+      - run: python scripts/validate-resource-manager.py
+      - run: python scripts/package-resource-manager.py /tmp/oci-lip-resource-manager.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oci-lip-resource-manager
+          path: /tmp/oci-lip-resource-manager.zip
