@@ -1,3 +1,4 @@
+import { AlertSettings } from "./AlertSettings";
 import {
   Activity,
   AlertTriangle,
@@ -11,7 +12,6 @@ import {
   ChevronUp,
   Download,
   ExternalLink,
-  FileSearch,
   Filter,
   Globe2,
   LogIn,
@@ -22,7 +22,6 @@ import {
   Search,
   Server,
   Timer,
-  Upload,
   UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -56,12 +55,10 @@ import {
   triggerScan,
   triggerRegionScan,
   unmuteLimit,
-  uploadBom,
 } from "./api";
 import type {
   Alert,
   AuthUser,
-  BomDocument,
   Dashboard,
   LimitItem,
   MonitoredRegion,
@@ -218,8 +215,6 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [scanMessage, setScanMessage] = useState("");
-  const [bomDocument, setBomDocument] = useState<BomDocument | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [savingRegions, setSavingRegions] = useState(false);
   const [discoveringRegions, setDiscoveringRegions] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -445,20 +440,6 @@ export default function App() {
     }
   }
 
-  async function handleUpload(file: File | null) {
-    if (!file) return;
-    setUploading(true);
-    setError("");
-    try {
-      const result = await uploadBom(file);
-      setBomDocument(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "BOM analysis failed.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
   async function handleSignOut() {
     try {
       await signOut();
@@ -504,10 +485,11 @@ export default function App() {
           />
           <div className="app-identity">
             <h1>OCI Limit Intelligence Platform</h1>
-            <p>Service limits, usage, trends, alerts, and BOM readiness for OCI operations.</p>
+            <p>Service limits, usage, trends, and alerts for OCI operations.</p>
           </div>
         </div>
         <div className="topbar-actions">
+          {canAdmin && <a className="button secondary" href="#alert-settings-title"><Bell size={16} /> Alert settings</a>}
           <div className="signed-in-user">
             <UserRound size={18} />
             <div>
@@ -1002,11 +984,12 @@ export default function App() {
                           className="button secondary icon-button"
                           title={item.is_muted ? "Re-enable alerts for this limit" : "Mute alerts for this limit"}
                           aria-label={item.is_muted ? "Re-enable alerts for this limit" : "Mute alerts for this limit"}
+                          aria-pressed={item.is_muted}
                           disabled={updatingMuteIds.includes(item.id)}
                           hidden={!canOperate}
                           onClick={() => updateLimitMute(item.id, !item.is_muted)}
                         >
-                          {item.is_muted ? <BellRing size={16} /> : <BellOff size={16} />}
+                          {item.is_muted ? <BellOff size={16} /> : <BellRing size={16} />}
                         </button>
                       </td>
                     </tr>
@@ -1099,7 +1082,7 @@ export default function App() {
                           disabled={updatingMuteIds.includes(alert.limit_item_id)}
                           onClick={() => updateLimitMute(alert.limit_item_id as string, true)}
                         >
-                          <BellOff size={15} />
+                          <BellRing size={15} />
                         </button>
                       )}
                     </div>
@@ -1117,7 +1100,7 @@ export default function App() {
                         disabled={updatingMuteIds.includes(item.id)}
                         onClick={() => updateLimitMute(item.id, false)}
                       >
-                        <BellRing size={15} />
+                        <BellOff size={15} />
                         Re-enable
                       </button>
                     </div>
@@ -1166,56 +1149,9 @@ export default function App() {
         </aside>
       </section>
 
-      <section className="lower-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>BOM analyzer</h2>
-              <p>Upload planned OCI resources and compare them to scanned limits.</p>
-            </div>
-                <label className={`button primary file-button ${!canOperate ? "disabled" : ""}`}>
-                  <Upload size={16} />
-                  {uploading ? "Analyzing" : "Upload"}
-                  <input
-                    type="file"
-                    disabled={!canOperate}
-                accept=".pdf,.docx,.xlsx,.csv,.txt,.json,.tfplan"
-                onChange={(event) => handleUpload(event.target.files?.[0] ?? null)}
-              />
-            </label>
-          </div>
-          {bomDocument ? (
-            <div className="bom-results">
-              <div>
-                <FileSearch size={18} />
-                <strong>{bomDocument.filename}</strong>
-                <span>{bomDocument.items.length} detected items</span>
-              </div>
-              <div className="recommendation-list">
-                {bomDocument.recommendations.map((item) => (
-                  <div key={item.id} className={item.limit_increase_needed ? "recommendation needs-increase" : "recommendation"}>
-                    <strong>
-                      {item.matching_service ?? "Manual review"} / {item.matching_limit_name ?? "unmapped"}
-                    </strong>
-                    <p>{item.explanation}</p>
-                    <span>
-                      Required {fmtNumber(item.required_quantity)}
-                      {item.recommended_new_limit
-                        ? ` · recommended new limit ${fmtNumber(item.recommended_new_limit)}`
-                        : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <EmptyState
-              title="No BOM analyzed"
-              detail="Supported files include PDF, DOCX, XLSX, CSV, JSON, text, and Terraform plan JSON."
-            />
-          )}
-        </div>
+      {canAdmin && <AlertSettings onSaved={() => { void refresh(false); }} />}
 
+      <section className="lower-grid trends-only">
         <div className="panel">
           <div className="panel-header">
             <div>

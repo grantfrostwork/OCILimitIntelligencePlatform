@@ -79,9 +79,7 @@ def test_muted_limit_is_persistent_and_excluded_from_operational_risk():
     assert summary.muted_limits == 1
     assert summary.top_usage == []
 
-    near_limit_query = _limits_query(
-        db, settings, None, None, None, None, None, True, "all"
-    )
+    near_limit_query = _limits_query(db, settings, None, None, None, None, None, True, "all")
     assert list(db.scalars(near_limit_query)) == []
 
 
@@ -151,3 +149,93 @@ def test_muted_limit_does_not_generate_new_limit_alerts():
     AlertService(db, Settings(), sdk=object()).evaluate_snapshot(item, snapshot)
 
     assert db.query(Alert).count() == 0
+
+
+def test_muted_limit_never_publishes_email_even_when_notifications_enabled():
+    db = _database()
+    item = _limit()
+    item.is_muted = True
+    db.add(item)
+    db.commit()
+    snapshot = LimitSnapshot(
+        limit_item_id=item.id,
+        allowed_limit=2,
+        used=2,
+        available=0,
+        percent_used=100,
+        collection_status="ok",
+    )
+    service = AlertService(db, Settings(lip_enable_notifications=True), sdk=object())
+    # object() has no publish/config methods: any delivery attempt fails this test.
+    service.evaluate_snapshot(item, snapshot)
+    assert db.query(Alert).count() == 0
+
+
+def test_scan_checks_fresh_mute_flag_instead_of_cached_item(tmp_path):
+    from sqlalchemy import select
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'mute-race.db'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as scan_db, sessions() as api_db:
+        item = _limit()
+        scan_db.add(item)
+        scan_db.commit()
+        persisted = api_db.get(LimitItem, item.id)
+        mute_limit(api_db, persisted)
+        api_db.commit()
+        assert item.is_muted is False  # The running scan still has the stale object.
+        snapshot = LimitSnapshot(
+            limit_item_id=item.id,
+            allowed_limit=2,
+            used=2,
+            available=0,
+            percent_used=100,
+            collection_status="ok",
+        )
+        service = AlertService(scan_db, Settings(lip_enable_notifications=True), sdk=object())
+        service.evaluate_snapshot(item, snapshot)
+        assert list(scan_db.scalars(select(Alert))) == []
+
+
+def test_publish_rechecks_mute_after_subscription_network_calls():
+    from unittest.mock import Mock
+
+    from sqlalchemy import update
+
+    db = _database()
+    item = _limit()
+    db.add(item)
+    db.flush()
+    alert = Alert(
+        fingerprint="publish-mute-race",
+        alert_type="threshold_exceeded",
+        severity="critical",
+        title="limit",
+        message="100% used",
+        status="open",
+        metadata_json={"limit_item_id": item.id},
+    )
+    db.add(alert)
+    db.commit()
+    service = AlertService(db, Settings(lip_enable_notifications=True), sdk=object())
+
+    def reconcile_then_mute():
+        from types import SimpleNamespace
+
+        db.execute(
+            update(LimitItem).where(LimitItem.id == item.id).values(is_muted=True),
+            execution_options={"synchronize_session": False},
+        )
+        db.commit()
+        return SimpleNamespace(
+            topic_id="topic",
+            subject_template="{service}",
+            message_template="{message}",
+            warning_threshold_percent=90,
+            critical_threshold_percent=98,
+        )
+
+    service.ensure_notification_config = Mock(side_effect=reconcile_then_mute)
+    assert service._publish(alert) is False
+    assert alert.status == "muted"

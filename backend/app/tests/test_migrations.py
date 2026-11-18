@@ -27,6 +27,6 @@ def test_fresh_database_migrates_to_head(tmp_path: Path) -> None:
             row[1] for row in connection.execute("PRAGMA table_info(limit_items)").fetchall()
         }
 
-    assert revision == ("0004_limit_alert_muting",)
+    assert revision == ("0005_alert_settings",)
     assert {"scan_runs", "monitored_regions", "scan_requests", "scan_schedule"} <= tables
     assert {"is_muted", "muted_at", "mute_reason"} <= limit_columns

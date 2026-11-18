@@ -1,7 +1,7 @@
 import type {
   Alert,
   AuthUser,
-  BomDocument,
+  NotificationSettings,
   Dashboard,
   LimitItem,
   MonitoredRegion,
@@ -31,8 +31,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await response.text();
     let message = body;
     try {
-      const parsed = JSON.parse(body) as { detail?: string };
-      message = parsed.detail ?? body;
+      const parsed = JSON.parse(body) as { detail?: string | { msg: string }[] };
+      message = Array.isArray(parsed.detail) ? parsed.detail.map((item) => item.msg).join("; ") : parsed.detail ?? body;
     } catch {
       // Preserve a non-JSON response from the proxy or API.
     }
@@ -160,10 +160,20 @@ export function triggerRegionScan(region: string) {
   });
 }
 
-export function uploadBom(file: File) {
-  const form = new FormData();
-  form.append("file", file);
-  return request<BomDocument>("/api/bom/analyze", { method: "POST", body: form });
+export function getNotificationSettings() {
+  return request<NotificationSettings>("/api/notifications");
+}
+
+export function saveNotificationSettings(settings: NotificationSettings) {
+  const { enabled, warning_threshold_percent, critical_threshold_percent, emails, subject_template, message_template } = settings;
+  return request<NotificationSettings>("/api/notifications", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled, warning_threshold_percent, critical_threshold_percent, emails, subject_template, message_template }),
+  });
+}
+
+export function syncNotificationSettings() {
+  return request<NotificationSettings>("/api/notifications/ensure", { method: "POST" });
 }
 
 export function exportUrl(params: LimitQuery) {

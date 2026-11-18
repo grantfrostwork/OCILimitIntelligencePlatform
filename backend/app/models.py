@@ -252,64 +252,14 @@ class NotificationConfig(Base):
     region: Mapped[str] = mapped_column(String(64))
     emails: Mapped[list[str]] = mapped_column(JSON, default=list)
     subscription_status: Mapped[dict | None] = mapped_column(JSON)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    warning_threshold_percent: Mapped[float] = mapped_column(Float, default=90, server_default="90")
+    critical_threshold_percent: Mapped[float] = mapped_column(Float, default=98, server_default="98")
+    subject_template: Mapped[str] = mapped_column(Text, default="OCI limit increase needed: {service} / {limit}", server_default="OCI limit increase needed: {service} / {limit}")
+    message_template: Mapped[str] = mapped_column(Text, default="{message}\nPlease review capacity and request a limit increase.\n{app_url}", server_default="{message}\nPlease review capacity and request a limit increase.\n{app_url}")
+    last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class BomDocument(Base):
-    __tablename__ = "bom_documents"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    filename: Mapped[str] = mapped_column(String(255))
-    content_type: Mapped[str | None] = mapped_column(String(255))
-    size_bytes: Mapped[int] = mapped_column(Integer)
-    sha256: Mapped[str] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(String(32), default="uploaded", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    raw_text_preview: Mapped[str | None] = mapped_column(Text)
-
-    items: Mapped[list["BomItem"]] = relationship(back_populates="document")
-    recommendations: Mapped[list["BomRecommendation"]] = relationship(back_populates="document")
-
-
-class BomItem(Base):
-    __tablename__ = "bom_items"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    document_id: Mapped[str] = mapped_column(ForeignKey("bom_documents.id"), index=True)
-    resource_type: Mapped[str] = mapped_column(String(128), index=True)
-    display_name: Mapped[str] = mapped_column(String(255))
-    quantity: Mapped[float] = mapped_column(Float)
-    unit: Mapped[str] = mapped_column(String(64), default="count")
-    region: Mapped[str | None] = mapped_column(String(64))
-    service_name: Mapped[str | None] = mapped_column(String(128))
-    confidence: Mapped[str] = mapped_column(String(32), default="low")
-    source_excerpt: Mapped[str | None] = mapped_column(Text)
-    assumptions: Mapped[list[str] | None] = mapped_column(JSON)
-
-    document: Mapped[BomDocument] = relationship(back_populates="items")
-
-
-class BomRecommendation(Base):
-    __tablename__ = "bom_recommendations"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    document_id: Mapped[str] = mapped_column(ForeignKey("bom_documents.id"), index=True)
-    bom_item_id: Mapped[str | None] = mapped_column(ForeignKey("bom_items.id"), index=True)
-    limit_item_id: Mapped[str | None] = mapped_column(ForeignKey("limit_items.id"), index=True)
-    matching_service: Mapped[str | None] = mapped_column(String(128))
-    matching_limit_name: Mapped[str | None] = mapped_column(String(255))
-    current_usage: Mapped[float | None] = mapped_column(Float)
-    allowed_limit: Mapped[float | None] = mapped_column(Float)
-    available_capacity: Mapped[float | None] = mapped_column(Float)
-    required_quantity: Mapped[float] = mapped_column(Float)
-    limit_increase_needed: Mapped[bool] = mapped_column(Boolean, default=False)
-    recommended_new_limit: Mapped[float | None] = mapped_column(Float)
-    confidence: Mapped[str] = mapped_column(String(32), default="low")
-    explanation: Mapped[str] = mapped_column(Text)
-    assumptions: Mapped[list[str] | None] = mapped_column(JSON)
-
-    document: Mapped[BomDocument] = relationship(back_populates="recommendations")
 
 
 class AuditLog(Base):

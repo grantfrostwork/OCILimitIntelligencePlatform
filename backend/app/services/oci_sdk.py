@@ -257,6 +257,10 @@ class OciSdk:
             opc_retry_token=str(uuid.uuid4()),
         )
 
+    def delete_subscription(self, subscription_id: str, *, region: str) -> None:
+        client = self._client(NotificationDataPlaneClient, region)
+        self._one("ons.delete_subscription", region, client.delete_subscription, subscription_id)
+
     def publish_message(self, topic_id: str, title: str, body: str, *, region: str) -> Any:
         client = self._client(NotificationDataPlaneClient, region)
         details = MessageDetails(title=title, body=body)

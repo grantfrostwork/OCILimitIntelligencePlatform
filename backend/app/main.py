@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import auth, bom, health, limits
+from app.api import auth, health, limits, notifications
 from app.core.config import get_settings
 from app.core.database import init_db
 
@@ -16,7 +16,6 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.validate_auth_configuration()
     init_db()
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -49,7 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(limits.router)
-    app.include_router(bom.router)
+    app.include_router(notifications.router)
     return app
 
 

@@ -29,9 +29,9 @@
       "tags": [],
       "targetBlank": true,
       "title": "Open OCI LIP Application",
-      "tooltip": "Open the operational limit matrix and BOM analyzer",
+      "tooltip": "Open the operational limit matrix",
       "type": "link",
-      "url": "http://129.80.114.109/"
+      "url": "https://157.151.207.234/"
     }
   ],
   "liveNow": false,

@@ -15,6 +15,9 @@ LIMIT_LABELS = ["region", "service", "limit_name", "scope", "availability_domain
 
 
 def render_metrics(db: Session, settings: Settings) -> bytes:
+    from app.services.notification_settings import effective_settings
+
+    settings = effective_settings(db, settings or get_settings())
     registry = CollectorRegistry()
     info = Gauge(
         "oci_lip_exporter_info",
@@ -123,6 +126,9 @@ def render_metrics(db: Session, settings: Settings) -> bytes:
 
 
 def render_health_metrics(db: Session, settings: Settings | None = None) -> bytes:
+    from app.services.notification_settings import effective_settings
+
+    settings = effective_settings(db, settings or get_settings())
     registry = CollectorRegistry()
     info = Gauge(
         "oci_lip_exporter_info",

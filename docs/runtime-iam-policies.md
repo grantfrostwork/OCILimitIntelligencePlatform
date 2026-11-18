@@ -144,7 +144,7 @@ These IAM Identity Domain groups authorize people to use LIP; they do not grant 
 | Group | LIP role | Application permissions |
 | --- | --- | --- |
 | `OCI-LIP-Viewers` | Viewer | Dashboard, limits, alerts, trends, Grafana, and exports |
-| `OCI-LIP-Operators` | Operator | Viewer access plus scans, BOM analysis, mute/unmute, and alert resolution |
+| `OCI-LIP-Operators` | Operator | Viewer access plus scans, mute/unmute, and alert resolution |
 | `OCI-LIP-Admins` | Admin | Operator access plus region allowlist, scan schedule, and notification configuration |
 
 Assign and remove users through IAM group membership. The FastAPI backend must enforce these roles;
@@ -167,7 +167,6 @@ For customers with strict separation of duties, split deployment into:
 1. Create the narrow runtime dynamic group and policies alongside the existing broad policy.
 2. Run subscribed-region discovery.
 3. Complete two full scans across all selected regions.
-4. Test BOM analysis against persisted scan data.
 5. If enabled, validate topic discovery, subscription state, and message publication separately.
 6. Review OCI Audit events and application logs for authorization failures.
 7. Remove the VM's `manage all-resources` or Administrator access.

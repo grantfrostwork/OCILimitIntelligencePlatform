@@ -632,17 +632,14 @@ tr.row-muted {
   font-size: 12px;
 }
 
-.alert-item p,
-.recommendation p {
+.alert-item p {
   margin: 6px 0;
   color: #485a55;
   line-height: 1.4;
 }
 
 .alert-item span,
-.trend-item span,
-.recommendation span,
-.bom-results span {
+.trend-item span {
   color: #60716c;
   font-size: 12px;
 }
@@ -710,17 +707,6 @@ tr.row-muted {
 .file-button.disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.bom-results {
-  display: grid;
-  gap: 14px;
-}
-
-.bom-results > div:first-child {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .error-banner,
@@ -1098,3 +1084,33 @@ tr.row-muted {
     white-space: normal;
   }
 }
+
+.alert-settings { margin: 24px 0; }
+.alert-settings h2 { display: flex; align-items: center; gap: 8px; }
+.alert-settings fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.alert-settings label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+.alert-settings input:not([type=checkbox]), .alert-settings textarea { width: 100%; min-width: 0; border: 1px solid #c4d1cc; border-radius: 6px; padding: 10px 12px; background: #fff; color: #20352c; font: inherit; }
+.alert-settings textarea { resize: vertical; }
+.alert-settings .notification-toggle { display: flex; align-items: center; gap: 10px; }
+.notification-toggle input { width: 18px; height: 18px; }
+.settings-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.settings-columns > div { min-width: 0; }
+.threshold-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.settings-help { color: #60716c; font-size: 13px; line-height: 1.6; margin: 8px 0 16px; }
+.recipient-add { display: flex; gap: 8px; }
+.recipient-add input { flex: 1; }
+.recipient-list { list-style: none; padding: 0; margin: 12px 0; }
+.recipient-list li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #e3eae7; font-size: 13px; }
+.recipient-list li > span:first-child { flex: 1; overflow-wrap: anywhere; }
+.recipient-list button { padding: 6px; min-height: 30px; }
+.subscription-status { font-size: 11px; padding: 4px 7px; border-radius: 12px; }
+.subscription-status.active { color: #195d43; background: #e5f4ec; }
+.subscription-status.pending { color: #805a19; background: #fff4d8; }
+.email-preview { border: 1px solid #dbe5df; background: #f7faf8; padding: 16px; border-radius: 8px; overflow-wrap: anywhere; }
+.email-preview h3 { margin-top: 0; }
+.email-preview small { font-size: 11px; color: #60716c; font-weight: 400; }
+.email-preview pre { white-space: pre-wrap; font: inherit; font-size: 13px; line-height: 1.6; }
+.settings-footer { margin-top: 22px; display: flex; align-items: center; gap: 16px; }
+.settings-footer span { font-size: 12px; color: #60716c; }
+.lower-grid.trends-only { grid-template-columns: 1fr; }
+@media (max-width: 900px) { .settings-columns { grid-template-columns: 1fr; } .settings-footer { align-items: flex-start; flex-direction: column; } }

@@ -11,7 +11,7 @@ from sqlalchemy import and_, desc, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthUser, require_admin, require_operator, require_viewer
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.database import get_db
 from app.models import (
     Alert,
@@ -35,7 +35,7 @@ from app.schemas import (
     ScanScheduleOut,
     ScanScheduleUpdate,
 )
-from app.services.alerts import AlertService
+from app.services.notification_settings import get_runtime_settings
 from app.services.muting import mute_limit, unmute_limit
 from app.services.oci_sdk import OciSdkError
 from app.services.regions import RegionService
@@ -241,7 +241,7 @@ def _limits_query(
 @router.get("/limits")
 def list_limits(
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     service: str | None = None,
     region: str | None = None,
     q: str | None = None,
@@ -286,7 +286,7 @@ def list_limits(
 @router.get("/limits/export")
 def export_limits(
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     service: str | None = None,
     region: str | None = None,
     q: str | None = None,
@@ -355,7 +355,7 @@ def list_services(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/dashboard", response_model=DashboardOut)
-def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> DashboardOut:
+def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_runtime_settings)) -> DashboardOut:
     total = db.scalar(select(func.count(LimitItem.id))) or 0
     muted = (
         db.scalar(select(func.count(LimitItem.id)).where(LimitItem.is_muted.is_(True))) or 0
@@ -489,7 +489,7 @@ def dashboard(db: Session = Depends(get_db), settings: Settings = Depends(get_se
 @router.get("/regions", response_model=list[RegionOut])
 def list_regions(
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
 ) -> list[RegionOut]:
     if not db.scalar(select(func.count(MonitoredRegion.id))):
         try:
@@ -503,7 +503,7 @@ def list_regions(
 @router.post("/regions/discover", response_model=list[RegionOut])
 def discover_regions(
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_admin),
 ) -> list[RegionOut]:
     try:
@@ -518,7 +518,7 @@ def discover_regions(
 def update_region_allowlist(
     payload: RegionAllowlistUpdate,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_admin),
 ) -> list[RegionOut]:
     try:
@@ -533,7 +533,7 @@ def update_region_allowlist(
 def trigger_region_scan(
     region: str,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_operator),
 ) -> ScanEnqueueOut:
     return _enqueue_scan_response(db, settings, [region], user.email)
@@ -557,7 +557,7 @@ def scan_requests(
 def trigger_scan(
     region: str | None = None,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_operator),
 ) -> ScanEnqueueOut:
     return _enqueue_scan_response(
@@ -571,7 +571,7 @@ def trigger_scan(
 @router.get("/scan-schedule", response_model=ScanScheduleOut)
 def scan_schedule(
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
 ) -> ScanScheduleOut:
     schedule = get_or_create_schedule(db, settings)
     db.commit()
@@ -582,7 +582,7 @@ def scan_schedule(
 def set_scan_schedule(
     payload: ScanScheduleUpdate,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_admin),
 ) -> ScanScheduleOut:
     try:
@@ -621,7 +621,7 @@ def mute_limit_alerts(
     limit_item_id: str,
     payload: LimitMuteRequest,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_operator),
 ) -> LimitItemOut:
     limit_item = db.get(LimitItem, limit_item_id)
@@ -653,7 +653,7 @@ def mute_limit_alerts(
 def unmute_limit_alerts(
     limit_item_id: str,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_runtime_settings),
     user: AuthUser = Depends(require_operator),
 ) -> LimitItemOut:
     limit_item = db.get(LimitItem, limit_item_id)
@@ -700,28 +700,3 @@ def resolve_alert(
     db.commit()
     db.refresh(alert)
     return alert
-
-
-@router.post("/notifications/ensure")
-def ensure_notifications(
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    user: AuthUser = Depends(require_admin),
-) -> dict:
-    config = AlertService(db, settings).ensure_notification_config()
-    db.add(
-        AuditLog(
-            actor=user.email,
-            action="notifications.ensured",
-            target=config.topic_id or config.topic_name,
-        )
-    )
-    db.commit()
-    return {
-        "topic_name": config.topic_name,
-        "topic_id": config.topic_id,
-        "region": config.region,
-        "emails": config.emails,
-        "subscription_status": config.subscription_status,
-        "enabled": settings.lip_enable_notifications,
-    }

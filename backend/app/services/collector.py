@@ -92,6 +92,9 @@ class LimitsCollector:
         canonical_region: str | None = None,
     ) -> None:
         self.db = db
+        from app.services.notification_settings import effective_settings
+
+        settings = effective_settings(db, settings)
         self.settings = settings
         self.sdk = sdk or OciSdk(settings)
         self.canonical_region = canonical_region or settings.oci_default_region

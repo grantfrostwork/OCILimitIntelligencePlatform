@@ -5,9 +5,9 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 ## Runtime Components
 
 - React frontend served by NGINX.
-- FastAPI backend for dashboard, limits, alert, scan, and BOM APIs.
+- FastAPI backend for dashboard, limits, alert, scan, and settings APIs.
 - Worker process with a durable regional queue, persistent configurable schedule, and bounded regional executor.
-- PostgreSQL for normalized current state, historical snapshots, alerts, audit logs, and BOM analysis.
+- PostgreSQL for normalized current state, historical snapshots, alerts, audit logs.
 - OCI Python SDK clients for Limits, Identity, and Notifications.
 - Prometheus exposition endpoint backed by persisted limit state.
 - Internal Prometheus time-series storage and rule evaluation.
@@ -27,7 +27,6 @@ OCI Limit Intelligence Platform is built as a production web application with a 
 7. Snapshots are stored, trends are calculated, and alert rules are evaluated.
 8. The completed regional batch publishes one timestamped OTLP metric snapshot to the bundled Prometheus service.
 9. UI reads dashboard aggregates, regional progress, and matrix rows from the API.
-10. BOM uploads are parsed, extracted resources are mapped to scanned limits, and recommendations are persisted.
 
 ## SDK Concurrency and Reliability
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, timedelta
 from hashlib import sha256
 from typing import Any
 
@@ -20,7 +20,9 @@ def _fingerprint(parts: list[Any]) -> str:
 class AlertService:
     def __init__(self, db: Session, settings: Settings, sdk: OciSdk | None = None) -> None:
         self.db = db
-        self.settings = settings
+        from app.services.notification_settings import effective_settings
+
+        self.settings = effective_settings(db, settings)
         self.sdk = sdk or OciSdk(settings)
 
     def upsert_alert(
@@ -35,13 +37,15 @@ class AlertService:
         limit_name: str | None = None,
         metadata: dict | None = None,
     ) -> Alert:
-        fp = _fingerprint([alert_type, severity, region, service_name, limit_name, metadata or {}])
+        identity = (metadata or {}).get("limit_item_id") or (metadata or {})
+        fp = _fingerprint([alert_type, severity, region, service_name, limit_name, identity])
         now = utcnow()
         alert = self.db.scalar(select(Alert).where(Alert.fingerprint == fp))
         if alert:
             alert.last_seen_at = now
             alert.occurrences += 1
             alert.message = message
+            alert.metadata_json = metadata
             alert.status = "open"
         else:
             alert = Alert(
@@ -54,19 +58,47 @@ class AlertService:
                 service_name=service_name,
                 limit_name=limit_name,
                 metadata_json=metadata,
-                dedupe_until=now + timedelta(minutes=self.settings.lip_alert_dedupe_minutes),
+                dedupe_until=None,
             )
             self.db.add(alert)
             self.db.flush()
 
-        if self.settings.lip_enable_notifications and self._should_notify(alert, now):
-            self._publish(alert)
-            alert.dedupe_until = now + timedelta(minutes=self.settings.lip_alert_dedupe_minutes)
+        if (
+            self.settings.lip_enable_notifications
+            and alert_type == "threshold_exceeded"
+            and self._should_notify(alert, now)
+        ):
+            try:
+                if self._publish(alert):
+                    alert.dedupe_until = now + timedelta(
+                        minutes=self.settings.lip_alert_dedupe_minutes
+                    )
+            except (OciSdkError, ValueError) as exc:
+                # Notification failures must never abort collection of limits.
+                config = self.db.scalar(
+                    select(NotificationConfig).where(
+                        NotificationConfig.topic_name == self.settings.lip_notification_topic_name
+                    )
+                )
+                if config:
+                    config.last_error = str(exc)
+                self.db.add(
+                    AlertEvent(
+                        alert_id=alert.id,
+                        message=alert.message,
+                        delivery_status="failed",
+                        raw_response={"error": str(exc)},
+                    )
+                )
 
         return alert
 
     def evaluate_snapshot(self, limit_item: LimitItem, snapshot: LimitSnapshot) -> None:
-        if limit_item.is_muted:
+        # A scan caches LimitItem objects; read the persisted flag independently so a
+        # mute saved by the API takes effect during an already-running scan.
+        if limit_item.is_muted or self.db.scalar(
+            select(LimitItem.is_muted).where(LimitItem.id == limit_item.id)
+        ):
             return
 
         if snapshot.collection_status not in {"ok", "unsupported"}:
@@ -107,6 +139,8 @@ class AlertService:
             metadata={
                 "limit_item_id": limit_item.id,
                 "percent_used": snapshot.percent_used,
+                "used": snapshot.used,
+                "allowed_limit": snapshot.allowed_limit,
                 "scope_type": limit_item.scope_type,
                 "availability_domain": limit_item.availability_domain,
             },
@@ -115,9 +149,17 @@ class AlertService:
     def alert_limit_change(
         self, limit_item: LimitItem, previous_allowed: float | None, current_allowed: float | None
     ) -> None:
-        if limit_item.is_muted:
+        # A scan caches LimitItem objects; read the persisted flag independently so a
+        # mute saved by the API takes effect during an already-running scan.
+        if limit_item.is_muted or self.db.scalar(
+            select(LimitItem.is_muted).where(LimitItem.id == limit_item.id)
+        ):
             return
-        if previous_allowed is None or current_allowed is None or previous_allowed == current_allowed:
+        if (
+            previous_allowed is None
+            or current_allowed is None
+            or previous_allowed == current_allowed
+        ):
             return
         self.upsert_alert(
             alert_type="limit_value_changed",
@@ -138,52 +180,88 @@ class AlertService:
         )
 
     def _should_notify(self, alert: Alert, now) -> bool:
-        return alert.dedupe_until is None or alert.dedupe_until <= now or alert.occurrences == 1
+        until = alert.dedupe_until
+        if until is not None and until.tzinfo is None:
+            until = until.replace(tzinfo=UTC)
+        return until is None or until <= now
 
-    def _publish(self, alert: Alert) -> None:
+    def _delivery_is_muted(self, alert: Alert) -> bool:
+        item_id = (alert.metadata_json or {}).get("limit_item_id")
+        muted = alert.status == "muted" or bool(
+            item_id and self.db.scalar(select(LimitItem.is_muted).where(LimitItem.id == item_id))
+        )
+        if muted:
+            alert.status = "muted"
+        return muted
+
+    def _publish(self, alert: Alert) -> bool:
+        if self._delivery_is_muted(alert):
+            return False
         config = self.ensure_notification_config()
         if not config.topic_id:
-            return
-        body = f"{alert.severity.upper()}: {alert.message}"
+            return False
+        # Do not publish until the topic's subscriptions match the saved recipient list.
+        from app.services.message_templates import render_message
+
+        title, body = render_message(config, alert, self.settings)
+        # Subscription reconciliation makes network calls; a mute may have arrived
+        # while those calls were in progress. Check again at the delivery boundary.
+        if self._delivery_is_muted(alert):
+            return False
         event = AlertEvent(alert_id=alert.id, message=body, delivery_status="pending")
         self.db.add(event)
         try:
             response = self.sdk.publish_message(
                 config.topic_id,
-                alert.title[:255],
+                title,
                 body[:60_000],
                 region=config.region,
             )
             event.delivery_status = "sent"
             event.raw_response = self.sdk.to_dict(response)
+            return True
         except OciSdkError as exc:
             event.delivery_status = "failed"
             event.raw_response = {"error": str(exc)}
+            config.last_error = str(exc)
+            return False
 
     def ensure_notification_config(self) -> NotificationConfig:
         topic_name = self.settings.lip_notification_topic_name
-        compartment_id = self.settings.lip_notification_compartment_ocid or self.settings.oci_tenancy_ocid
+        compartment_id = (
+            self.settings.lip_notification_compartment_ocid or self.settings.oci_tenancy_ocid
+        )
         region = self.settings.oci_default_region
-        config = self.db.scalar(select(NotificationConfig).where(NotificationConfig.topic_name == topic_name))
+        config = self.db.scalar(
+            select(NotificationConfig).where(NotificationConfig.topic_name == topic_name)
+        )
         if not config:
             config = NotificationConfig(
                 topic_name=topic_name,
                 compartment_ocid=compartment_id,
                 region=region,
                 emails=self.settings.lip_notification_emails,
+                enabled=self.settings.lip_enable_notifications,
+                warning_threshold_percent=self.settings.warning_threshold_percent,
+                critical_threshold_percent=self.settings.critical_threshold_percent,
             )
             self.db.add(config)
             self.db.flush()
 
-        if not self.settings.lip_enable_notifications:
+        if not config.enabled:
             return config
+        if not config.emails:
+            raise ValueError("Add at least one email recipient before enabling notifications.")
 
+        compartment_id, region = config.compartment_ocid, config.region
         topic = self._find_or_create_topic(topic_name, compartment_id, region)
         config.topic_id = topic.topic_id
         config.updated_at = utcnow()
         config.subscription_status = self._ensure_subscriptions(
-            config.topic_id, compartment_id, region, self.settings.lip_notification_emails
+            config.topic_id, compartment_id, region, config.emails
         )
+        config.last_error = None
+        self.db.flush()
         return config
 
     def _find_or_create_topic(self, name: str, compartment_id: str, region: str) -> Any:
@@ -205,9 +283,18 @@ class AlertService:
             return {"error": "missing topic id"}
         result: dict[str, str] = {}
         existing = self.sdk.list_subscriptions(compartment_id, topic_id, region=region)
+        # This topic is dedicated to LIP. Removing a saved email must revoke its subscription.
+        for item in existing:
+            if (
+                getattr(item, "protocol", "EMAIL") == "EMAIL"
+                and (item.endpoint or "").lower() not in emails
+                and item.lifecycle_state != "DELETED"
+            ):
+                self.sdk.delete_subscription(item.id, region=region)
         endpoints = {
             (item.endpoint or "").lower(): item.lifecycle_state or "UNKNOWN"
             for item in existing
+            if item.lifecycle_state != "DELETED"
         }
         for email in emails:
             if endpoints.get(email.lower()):

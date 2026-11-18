@@ -14,7 +14,6 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Historical snapshots and simple linear trend projections.
 - OCI Notifications topic/subscription integration for alerts.
 - Operations dashboard with filtering, sorting, pagination, export, service drilldown, alerts, and trend cards.
-- Bill of Materials upload and analysis for PDF, DOCX, XLSX, CSV, TXT, JSON, and Terraform plan JSON-style files.
 - Direct OCI Python SDK integration with instance-principal authentication, retries, and pagination.
 - Bounded regional, service-value, and resource-availability concurrency with staggered starts.
 - Exponential backoff with jitter, regional retries, and OCI throttling telemetry.

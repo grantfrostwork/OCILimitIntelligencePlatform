@@ -131,37 +131,16 @@ export interface Alert {
   limit_item_id: string | null;
 }
 
-export interface BomDocument {
-  id: string;
-  filename: string;
-  content_type: string | null;
-  size_bytes: number;
-  sha256: string;
-  status: string;
-  created_at: string;
-  items: {
-    id: string;
-    resource_type: string;
-    display_name: string;
-    quantity: number;
-    unit: string;
-    region: string | null;
-    service_name: string | null;
-    confidence: string;
-    assumptions: string[] | null;
-  }[];
-  recommendations: {
-    id: string;
-    matching_service: string | null;
-    matching_limit_name: string | null;
-    current_usage: number | null;
-    allowed_limit: number | null;
-    available_capacity: number | null;
-    required_quantity: number;
-    limit_increase_needed: boolean;
-    recommended_new_limit: number | null;
-    confidence: string;
-    explanation: string;
-    assumptions: string[] | null;
-  }[];
+export interface NotificationSettings {
+  enabled: boolean;
+  warning_threshold_percent: number;
+  critical_threshold_percent: number;
+  emails: string[];
+  subject_template: string;
+  message_template: string;
+  topic_name: string;
+  topic_id: string | null;
+  region: string;
+  subscription_status: Record<string, string> | null;
+  last_error: string | null;
 }
