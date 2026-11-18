@@ -2,9 +2,15 @@
 
 This is the recommended **new installation** stack. It creates a dedicated compartment, VCN, public/private subnets, internet/NAT gateways, a private Ampere A1 VM (2 OCPUs, 12 GB memory, 100 GB boot volume), reserved public IP, HTTPS flexible load balancer (10 Mbps), Bastion, runtime dynamic group/policies, and an OCI Notifications topic. PostgreSQL, Prometheus and Grafana run alongside the application on the VM. This is a single-host deployment; it is not highly available.
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https%3A%2F%2Fgithub.com%2Fgrantfrostwork%2FOCILimitIntelligencePlatform%2Freleases%2Fdownload%2Fcustomer-stack-v1.0.0%2Foci-lip-resource-manager.zip)
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https%3A%2F%2Fgithub.com%2Fgrantfrostwork%2FOCILimitIntelligencePlatform%2Freleases%2Fdownload%2Fcustomer-stack-v1.1.0%2Foci-lip-resource-manager.zip)
 
-[Download the stack ZIP](https://github.com/grantfrostwork/OCILimitIntelligencePlatform/releases/download/customer-stack-v1.0.0/oci-lip-resource-manager.zip). The ZIP has `schema.yaml` and Terraform files at its root, with all guest bootstrap assets included. No local file paths or infrastructure from the author's tenancy are required. The existing `secure-arm64` directory is a separate migration configuration; do not apply both stacks to the same installation.
+[Download the stack ZIP](https://github.com/grantfrostwork/OCILimitIntelligencePlatform/releases/download/customer-stack-v1.1.0/oci-lip-resource-manager.zip). The ZIP has `schema.yaml` and Terraform files at its root, with all guest bootstrap assets included. No local file paths or infrastructure from the author's tenancy are required. The existing `secure-arm64` directory is a separate migration configuration; do not apply both stacks to the same installation.
+
+## Release 1.1.0
+
+This package installs application commit `c752c28c22bd29ca87ee55cc401fb6498a2e7df0`, including per-service warning/critical overrides, default inheritance, Reset to default, and effective thresholds in the limit matrix. Overrides are editable under **Email alert settings → Service overrides** and apply across regions. Services without overrides retain the global defaults. New installs start with no overrides. See the [alert settings guide](https://github.com/grantfrostwork/OCILimitIntelligencePlatform/blob/customer-stack-v1.1.0/docs/alert-settings.md).
+
+This is a new-install package, not an in-place infrastructure migration. Existing deployments should follow the application upgrade procedure below; the additive `0006_service_alert_thresholds` migration retains existing settings and scan history. Changing this stack's pinned application commit does not upgrade an existing guest automatically.
 
 ## 1. Prepare prerequisites
 
@@ -57,7 +63,7 @@ The VM generates database, Grafana and session secrets locally. Root-owned files
 2. Select the deployment region. Enter your tenancy, parent compartment, tenancy **home region**, unique deployment name, and AD. The stack creates its own child compartment; the compartment selected to store the Resource Manager stack can be elsewhere.
 3. Supply an Oracle Linux **9 ARM64** platform image OCID from the deployment region compatible with `VM.Standard.A1.Flex`. Pin this OCID. Do not use an x86 image. You can find candidates with the read-only OCI CLI command below (DEFAULT profile).
 4. Fill in the SSH key, client CIDRs, HTTPS origin, existing certificate OCID, Vault secret OCID and Vault region. Decide whether to scan only the deployment region (default) or all subscribed regions. Initial alert defaults are warning 90%, critical 98%; warning must be below critical. Email sending starts **disabled** until configured in Settings.
-5. Disable automatic Apply if offered. Create the stack, run **Plan**, and review the compartment, IAM policies, networking and costs. Run **Apply** after accepting that plan. The VM's pinned application commit defaults to the tested alert-settings release; it does not clone a moving branch.
+5. Disable automatic Apply if offered. Create the stack, run **Plan**, and review the compartment, IAM policies, networking and costs. Run **Apply** after accepting that plan. The VM's pinned application commit defaults to the tested service-threshold release; it does not clone a moving branch.
 6. Set your hostname's DNS A record to the `dns_a_record` output. Wait for DNS propagation. Keep the hostname identical to `public_url`, certificate SAN, OIDC callback and logout URI.
 
 Example image lookup (replace the compartment with one you can inspect):

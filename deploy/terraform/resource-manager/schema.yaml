@@ -2,7 +2,7 @@ title: OCI Limit Intelligence Platform
 description: Private ARM64 monitoring with OCI IAM SSO and configurable email alerts.
   Complete certificate and Vault prerequisites in README before Apply.
 schemaVersion: 1.1.0
-version: 1.0.0
+version: 1.1.0
 locale: en
 variableGroups:
 - title: Deployment
@@ -127,7 +127,7 @@ variables:
     description: Immutable application Git commit. Updates require the documented
       guest upgrade procedure.
     required: true
-    default: 21f916000953aaeddc30600d4a0311c5ee72f1d4
+    default: c752c28c22bd29ca87ee55cc401fb6498a2e7df0
   scan_all_regions:
     type: boolean
     title: Scan all regions

@@ -9,7 +9,7 @@ The application is designed to run on an OCI Linux VM with instance principal au
 - Persistent region allowlist populated from the tenancy's READY region subscriptions.
 - Persistent automatic scan schedule with 10-minute, 30-minute, 4-hour, 24-hour, and 48-hour intervals.
 - Service, region, scope, and limit-level normalization.
-- Warning and critical threshold evaluation.
+- Global warning and critical thresholds with per-service overrides and reset to defaults.
 - Persistent limit-level alert muting with a restore view and muted-aware risk status.
 - Historical snapshots and simple linear trend projections.
 - OCI Notifications topic/subscription integration for alerts.
@@ -27,7 +27,7 @@ The application is designed to run on an OCI Linux VM with instance principal au
 
 Use the [customer installation guide](deploy/terraform/resource-manager/README.md) for the OCI Resource Manager stack, prerequisites, SSO, email setup, acceptance checks, upgrades and teardown.
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https%3A%2F%2Fgithub.com%2Fgrantfrostwork%2FOCILimitIntelligencePlatform%2Freleases%2Fdownload%2Fcustomer-stack-v1.0.0%2Foci-lip-resource-manager.zip)
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https%3A%2F%2Fgithub.com%2Fgrantfrostwork%2FOCILimitIntelligencePlatform%2Freleases%2Fdownload%2Fcustomer-stack-v1.1.0%2Foci-lip-resource-manager.zip)
 
 The stack creates a dedicated compartment and private ARM64 deployment. Prepare a customer hostname/TLS certificate and OCI IAM confidential application credentials in Vault first. Infrastructure Apply is followed by real SSO and email acceptance checks. Local development below uses different authentication defaults.
 

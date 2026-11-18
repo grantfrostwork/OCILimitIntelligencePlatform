@@ -1,6 +1,11 @@
 # Customer stack validation
 
-Validated on 2026-11-18:
+Release **1.1.0**, validated on 2026-11-18. Application commit: `c752c28c22bd29ca87ee55cc401fb6498a2e7df0`.
+
+- Application backend: **61 tests passed** locally and in the native ARM64 Python 3.12 runtime during live deployment; the frontend production build passed.
+- The additive service-threshold migration passed against a restored PostgreSQL database copy before live application deployment; live readiness and all six running services passed health checks. This does not constitute a fresh-tenancy stack Apply or a fresh real-user browser sign-in test.
+
+Stack package checks:
 
 - Terraform **1.5.7**, matching the documented Resource Manager 1.5.x runtime; Oracle OCI provider **8.24.0**. Formatting and `terraform validate` passed.
 - A non-applied plan using example identifiers: **32 resources to add, 0 to change, 0 to destroy**. This checks the graph and input expressions, not the installer's tenancy permissions or OCI service acceptance.

@@ -119,7 +119,7 @@ variable "secret_region" {
 variable "application_commit" {
   type        = string
   description = "Immutable application Git commit. Updates require the documented guest upgrade procedure."
-  default     = "21f916000953aaeddc30600d4a0311c5ee72f1d4"
+  default     = "c752c28c22bd29ca87ee55cc401fb6498a2e7df0"
   validation {
     condition     = can(regex("^[0-9a-f]{40}$", var.application_commit))
     error_message = "Supply a full immutable Git commit SHA."
